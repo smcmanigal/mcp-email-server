@@ -18,13 +18,14 @@ class EmailHandler(abc.ABC):
         from_address: str | None = None,
         to_address: str | None = None,
         order: str = "desc",
+        mailbox: str = "INBOX",
     ) -> "EmailMetadataPageResponse":
         """
         Get email metadata only (without body content) for better performance
         """
 
     @abc.abstractmethod
-    async def get_emails_content(self, email_ids: list[str]) -> "EmailContentBatchResponse":
+    async def get_emails_content(self, email_ids: list[str], mailbox: str = "INBOX") -> "EmailContentBatchResponse":
         """
         Get full content (including body) of multiple emails by their email IDs (IMAP UIDs)
         """
@@ -42,4 +43,10 @@ class EmailHandler(abc.ABC):
     ) -> None:
         """
         Send email
+        """
+
+    @abc.abstractmethod
+    async def delete_emails(self, email_ids: list[str], mailbox: str = "INBOX") -> tuple[list[str], list[str]]:
+        """
+        Delete emails by their IDs. Returns (deleted_ids, failed_ids)
         """

@@ -64,6 +64,7 @@ async def list_emails_metadata(
         Literal["asc", "desc"],
         Field(default=None, description="Order emails by field. `asc` or `desc`."),
     ] = "desc",
+    mailbox: Annotated[str, Field(default="INBOX", description="The mailbox to retrieve emails from.")] = "INBOX",
 ) -> EmailMetadataPageResponse:
     handler = dispatch_handler(account_name)
 
@@ -76,6 +77,7 @@ async def list_emails_metadata(
         from_address=from_address,
         to_address=to_address,
         order=order,
+        mailbox=mailbox,
     )
 
 
@@ -90,9 +92,10 @@ async def get_emails_content(
             description="List of email_id to retrieve (obtained from list_emails_metadata). Can be a single email_id or multiple email_ids."
         ),
     ],
+    mailbox: Annotated[str, Field(default="INBOX", description="The mailbox to retrieve emails from.")] = "INBOX",
 ) -> EmailContentBatchResponse:
     handler = dispatch_handler(account_name)
-    return await handler.get_emails_content(email_ids)
+    return await handler.get_emails_content(email_ids, mailbox)
 
 
 @mcp.tool(
@@ -128,3 +131,23 @@ async def send_email(
     recipient_str = ", ".join(recipients)
     attachment_info = f" with {len(attachments)} attachment(s)" if attachments else ""
     return f"Email sent successfully to {recipient_str}{attachment_info}"
+
+
+@mcp.tool(
+    description="Delete one or more emails by their email_id. Use list_emails_metadata first to get the email_id."
+)
+async def delete_emails(
+    account_name: Annotated[str, Field(description="The name of the email account.")],
+    email_ids: Annotated[
+        list[str],
+        Field(description="List of email_id to delete (obtained from list_emails_metadata)."),
+    ],
+    mailbox: Annotated[str, Field(default="INBOX", description="The mailbox to delete emails from.")] = "INBOX",
+) -> str:
+    handler = dispatch_handler(account_name)
+    deleted_ids, failed_ids = await handler.delete_emails(email_ids, mailbox)
+
+    result = f"Successfully deleted {len(deleted_ids)} email(s)"
+    if failed_ids:
+        result += f", failed to delete {len(failed_ids)} email(s): {', '.join(failed_ids)}"
+    return result
