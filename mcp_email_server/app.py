@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
@@ -15,6 +15,7 @@ from mcp_email_server.emails.models import (
     AttachmentDownloadResponse,
     EmailContentBatchResponse,
     EmailMetadataPageResponse,
+    SaveEmailToFileResponse,
 )
 
 mcp = FastMCP("email")
@@ -112,9 +113,16 @@ async def get_emails_content(
         ),
     ],
     mailbox: Annotated[str, Field(default="INBOX", description="The mailbox to retrieve emails from.")] = "INBOX",
+    truncate_body: Annotated[
+        int | None,
+        Field(
+            default=None,
+            description="Maximum number of characters for email body content. If specified, body content longer than this will be truncated. If not specified, defaults to 20000 characters.",
+        ),
+    ] = None,
 ) -> EmailContentBatchResponse:
     handler = dispatch_handler(account_name)
-    return await handler.get_emails_content(email_ids, mailbox)
+    return await handler.get_emails_content(email_ids, mailbox, truncate_body)
 
 
 @mcp.tool(
@@ -196,6 +204,43 @@ async def delete_emails(
     return result
 
 
+@mcp.tool(description="List all available email folders/labels in the account.")
+async def list_email_folders(
+    account_name: Annotated[str, Field(description="The name of the email account.")],
+    pattern: Annotated[str, Field(default="*", description="Pattern to filter folders (default: '*' for all)")] = "*",
+) -> list[dict[str, Any]]:
+    handler = dispatch_handler(account_name)
+    return await handler.list_folders(pattern)
+
+
+@mcp.tool(description="Move one or more emails to a specific folder.")
+async def move_emails_to_folder(
+    account_name: Annotated[str, Field(description="The name of the email account.")],
+    email_ids: Annotated[
+        list[str | int],
+        Field(description="List of email IDs to move."),
+    ],
+    target_folder: Annotated[str, Field(description="The target folder name.")],
+    source_mailbox: Annotated[
+        str,
+        Field(default="INBOX", description="The source mailbox (default: INBOX)."),
+    ] = "INBOX",
+    create_if_missing: Annotated[
+        bool,
+        Field(default=True, description="Create folder if it doesn't exist"),
+    ] = True,
+) -> dict[str, Any]:
+    handler = dispatch_handler(account_name)
+    id_strings = [str(eid) for eid in email_ids]
+    result = await handler.move_emails_to_folder(id_strings, target_folder, source_mailbox, create_if_missing)
+    return {
+        "moved": result["moved"],
+        "failed": result["failed"],
+        "total_moved": len(result["moved"]),
+        "total_failed": len(result["failed"]),
+    }
+
+
 @mcp.tool(
     description="Download an email attachment and save it to the specified path. This feature must be explicitly enabled in settings (enable_attachment_download=true) due to security considerations.",
 )
@@ -219,3 +264,105 @@ async def download_attachment(
 
     handler = dispatch_handler(account_name)
     return await handler.download_attachment(email_id, attachment_name, save_path, mailbox)
+
+
+@mcp.tool(description="Add flags to one or more emails.")
+async def add_email_flags(
+    account_name: Annotated[str, Field(description="The name of the email account.")],
+    email_ids: Annotated[list[str | int], Field(description="List of email IDs to add flags to.")],
+    flags: Annotated[list[str], Field(description="List of flags to add (e.g., ['ProcessedByBot', 'Seen']).")],
+    silent: Annotated[
+        bool, Field(default=False, description="Use silent operation to suppress server responses (default: False)")
+    ] = False,
+) -> dict[str, Any]:
+    handler = dispatch_handler(account_name)
+    id_strings = [str(eid) for eid in email_ids]
+    results = await handler.add_flags(id_strings, flags, silent)
+    successful = sum(results.values())
+    return {
+        "results": results,
+        "total_modified": successful,
+        "failed": len(email_ids) - successful,
+        "operation": "add_flags",
+        "flags": flags,
+        "silent": silent,
+    }
+
+
+@mcp.tool(description="Remove flags from one or more emails.")
+async def remove_email_flags(
+    account_name: Annotated[str, Field(description="The name of the email account.")],
+    email_ids: Annotated[list[str | int], Field(description="List of email IDs to remove flags from.")],
+    flags: Annotated[list[str], Field(description="List of flags to remove (e.g., ['ProcessedByBot', 'Flagged']).")],
+    silent: Annotated[
+        bool, Field(default=False, description="Use silent operation to suppress server responses (default: False)")
+    ] = False,
+) -> dict[str, Any]:
+    handler = dispatch_handler(account_name)
+    id_strings = [str(eid) for eid in email_ids]
+    results = await handler.remove_flags(id_strings, flags, silent)
+    successful = sum(results.values())
+    return {
+        "results": results,
+        "total_modified": successful,
+        "failed": len(email_ids) - successful,
+        "operation": "remove_flags",
+        "flags": flags,
+        "silent": silent,
+    }
+
+
+@mcp.tool(description="Replace all flags on one or more emails with the specified flags.")
+async def replace_email_flags(
+    account_name: Annotated[str, Field(description="The name of the email account.")],
+    email_ids: Annotated[list[str | int], Field(description="List of email IDs to replace flags on.")],
+    flags: Annotated[list[str], Field(description="List of flags to set (replaces all existing flags).")],
+    silent: Annotated[
+        bool, Field(default=False, description="Use silent operation to suppress server responses (default: False)")
+    ] = False,
+) -> dict[str, Any]:
+    handler = dispatch_handler(account_name)
+    id_strings = [str(eid) for eid in email_ids]
+    results = await handler.replace_flags(id_strings, flags, silent)
+    successful = sum(results.values())
+    return {
+        "results": results,
+        "total_modified": successful,
+        "failed": len(email_ids) - successful,
+        "operation": "replace_flags",
+        "flags": flags,
+        "silent": silent,
+    }
+
+
+@mcp.tool(description="Save a complete email to a file without truncation.")
+async def save_email_to_file(
+    account_name: Annotated[str, Field(description="The name of the email account.")],
+    email_id: Annotated[
+        str, Field(description="The email ID (obtained from list_emails_metadata or get_emails_content).")
+    ],
+    file_path: Annotated[str, Field(description="The file path where to save the email content.")],
+    output_format: Annotated[
+        Literal["html", "markdown"],
+        Field(
+            default="markdown",
+            description="Output format: 'html' returns original content, 'markdown' converts HTML to markdown or returns plain text as-is.",
+        ),
+    ] = "markdown",
+    include_headers: Annotated[
+        bool,
+        Field(
+            default=True,
+            description="Include email headers (subject, from, date, etc.) in the saved file.",
+        ),
+    ] = True,
+    mailbox: Annotated[str, Field(default="INBOX", description="The mailbox to search in.")] = "INBOX",
+) -> SaveEmailToFileResponse:
+    handler = dispatch_handler(account_name)
+    return await handler.save_email_to_file(
+        email_id=email_id,
+        file_path=file_path,
+        output_format=output_format,
+        include_headers=include_headers,
+        mailbox=mailbox,
+    )

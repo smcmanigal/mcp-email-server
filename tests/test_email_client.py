@@ -114,31 +114,31 @@ class TestEmailClient:
         criteria = EmailClient._build_search_criteria(since=since_date)
         assert criteria == ["SINCE", "01-JAN-2023"]
 
-        # Test with subject
+        # Test with subject (now quoted per RFC 3501)
         criteria = EmailClient._build_search_criteria(subject="Test")
-        assert criteria == ["SUBJECT", "Test"]
+        assert criteria == ["SUBJECT", '"Test"']
 
         # Test with body
         criteria = EmailClient._build_search_criteria(body="Test")
-        assert criteria == ["BODY", "Test"]
+        assert criteria == ["BODY", '"Test"']
 
         # Test with text
         criteria = EmailClient._build_search_criteria(text="Test")
-        assert criteria == ["TEXT", "Test"]
+        assert criteria == ["TEXT", '"Test"']
 
         # Test with from_address
         criteria = EmailClient._build_search_criteria(from_address="test@example.com")
-        assert criteria == ["FROM", "test@example.com"]
+        assert criteria == ["FROM", '"test@example.com"']
 
         # Test with to_address
         criteria = EmailClient._build_search_criteria(to_address="test@example.com")
-        assert criteria == ["TO", "test@example.com"]
+        assert criteria == ["TO", '"test@example.com"']
 
         # Test with multiple criteria
         criteria = EmailClient._build_search_criteria(
             subject="Test", from_address="test@example.com", since=datetime(2023, 1, 1, tzinfo=timezone.utc)
         )
-        assert criteria == ["SINCE", "01-JAN-2023", "SUBJECT", "Test", "FROM", "test@example.com"]
+        assert criteria == ["SINCE", "01-JAN-2023", "SUBJECT", '"Test"', "FROM", '"test@example.com"']
 
         # Test with seen=True (read emails)
         criteria = EmailClient._build_search_criteria(seen=True)
@@ -172,7 +172,7 @@ class TestEmailClient:
         criteria = EmailClient._build_search_criteria(seen=False, from_address="sender@example.com")
         assert "UNSEEN" in criteria
         assert "FROM" in criteria
-        assert "sender@example.com" in criteria
+        assert '"sender@example.com"' in criteria
 
         # Test compound criteria: flagged and answered
         criteria = EmailClient._build_search_criteria(flagged=True, answered=True)
@@ -186,9 +186,9 @@ class TestEmailClient:
         assert "UNSEEN" in criteria
         assert "FLAGGED" in criteria
         assert "FROM" in criteria
-        assert "test@example.com" in criteria
+        assert '"test@example.com"' in criteria
         assert "SUBJECT" in criteria
-        assert "Important" in criteria
+        assert '"Important"' in criteria
 
     @pytest.mark.asyncio
     async def test_get_emails_stream(self, email_client):

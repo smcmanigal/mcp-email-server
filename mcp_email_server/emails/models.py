@@ -63,3 +63,12 @@ class AttachmentDownloadResponse(BaseModel):
     mime_type: str
     size: int
     saved_path: str
+
+
+class SaveEmailToFileResponse(BaseModel):
+    """Save email to file response"""
+
+    email_id: str
+    file_path: str
+    content_length: int
+    output_format: str

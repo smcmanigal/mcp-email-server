@@ -1,12 +1,13 @@
 import abc
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from mcp_email_server.emails.models import (
         AttachmentDownloadResponse,
         EmailContentBatchResponse,
         EmailMetadataPageResponse,
+        SaveEmailToFileResponse,
     )
 
 
@@ -46,9 +47,18 @@ class EmailHandler(abc.ABC):
         """
 
     @abc.abstractmethod
-    async def get_emails_content(self, email_ids: list[str], mailbox: str = "INBOX") -> "EmailContentBatchResponse":
+    async def get_emails_content(
+        self, email_ids: list[str], mailbox: str = "INBOX", truncate_body: int | None = None
+    ) -> "EmailContentBatchResponse":
         """
         Get full content (including body) of multiple emails by their email IDs (IMAP UIDs)
+
+        Args:
+            email_ids: List of email IDs (IMAP UIDs) to retrieve.
+            mailbox: The mailbox to retrieve emails from (default: 'INBOX').
+            truncate_body: Maximum number of characters for email body content.
+                If specified, body content longer than this will be truncated.
+                If None, uses the default MAX_BODY_LENGTH (20000).
         """
 
     @abc.abstractmethod
@@ -86,6 +96,36 @@ class EmailHandler(abc.ABC):
         """
 
     @abc.abstractmethod
+    async def list_folders(self, pattern: str = "*") -> list[dict[str, Any]]:
+        """
+        List available email folders/labels in the account.
+
+        Args:
+            pattern: Pattern to filter folders (default: '*' for all).
+        """
+
+    @abc.abstractmethod
+    async def move_emails_to_folder(
+        self,
+        email_ids: list[str],
+        target_folder: str,
+        source_mailbox: str = "INBOX",
+        create_if_missing: bool = True,
+    ) -> dict[str, list[str]]:
+        """
+        Move one or more emails to a specified folder.
+
+        Args:
+            email_ids: List of email IDs (IMAP UIDs) to move.
+            target_folder: The target folder to move emails to.
+            source_mailbox: The source mailbox (default: "INBOX").
+            create_if_missing: Create the target folder if it doesn't exist.
+
+        Returns:
+            Dict with 'moved' and 'failed' lists of email IDs.
+        """
+
+    @abc.abstractmethod
     async def download_attachment(
         self,
         email_id: str,
@@ -104,4 +144,36 @@ class EmailHandler(abc.ABC):
 
         Returns:
             AttachmentDownloadResponse with download result information.
+        """
+
+    @abc.abstractmethod
+    async def add_flags(self, email_ids: list[str], flags: list[str], silent: bool = False) -> dict[str, bool]:
+        """Add flags to emails."""
+
+    @abc.abstractmethod
+    async def remove_flags(self, email_ids: list[str], flags: list[str], silent: bool = False) -> dict[str, bool]:
+        """Remove flags from emails."""
+
+    @abc.abstractmethod
+    async def replace_flags(self, email_ids: list[str], flags: list[str], silent: bool = False) -> dict[str, bool]:
+        """Replace all flags on emails."""
+
+    @abc.abstractmethod
+    async def save_email_to_file(
+        self,
+        email_id: str,
+        file_path: str,
+        output_format: str = "markdown",
+        include_headers: bool = True,
+        mailbox: str = "INBOX",
+    ) -> "SaveEmailToFileResponse":
+        """
+        Save a complete email to a file without truncation.
+
+        Args:
+            email_id: The UID of the email to save.
+            file_path: The file path where to save the email content.
+            output_format: 'html' for original HTML, 'markdown' to convert HTML to markdown.
+            include_headers: Include email headers (subject, from, date, etc.).
+            mailbox: The mailbox to search in (default: "INBOX").
         """

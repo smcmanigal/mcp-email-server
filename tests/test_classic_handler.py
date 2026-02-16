@@ -1,5 +1,6 @@
+import asyncio
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -363,7 +364,7 @@ class TestClassicEmailHandler:
             assert result.emails[0].body == "Test email body"
 
             # Verify the client method was called correctly
-            mock_get_body.assert_called_once_with("123", "INBOX")
+            mock_get_body.assert_called_once_with("123", "INBOX", None)
 
 
 class TestEmailClientBatchMethods:
@@ -472,3 +473,92 @@ Subject: No Date Email
         assert "100" in result
         assert result["100"]["subject"] == "Test"
         assert result["100"]["from"] == "sender@example.com"
+
+
+class TestImapConnectionContextManager:
+    """Test the imap_connection async context manager on ClassicEmailHandler."""
+
+    @pytest.fixture
+    def classic_handler(self, email_settings):
+        # Stub any abstract methods not yet implemented on this branch
+        # so the class can be instantiated for context manager testing.
+        stub_methods = {}
+        for name in getattr(ClassicEmailHandler, "__abstractmethods__", set()):
+            stub_methods[name] = AsyncMock()
+        if stub_methods:
+            patched_cls = type("_TestableHandler", (ClassicEmailHandler,), stub_methods)
+            return patched_cls(email_settings)
+        return ClassicEmailHandler(email_settings)
+
+    @pytest.fixture
+    def mock_imap(self):
+        mock = AsyncMock()
+        mock._client_task = asyncio.Future()
+        mock._client_task.set_result(None)
+        mock.wait_hello_from_server = AsyncMock()
+        mock.login = AsyncMock()
+        mock_select_result = MagicMock()
+        mock_select_result.result = "OK"
+        mock.select = AsyncMock(return_value=mock_select_result)
+        mock.logout = AsyncMock()
+        return mock
+
+    @pytest.mark.asyncio
+    async def test_connect_and_yield(self, classic_handler, mock_imap):
+        """Test that imap_connection connects, selects mailbox, and yields the client."""
+        with patch.object(classic_handler.incoming_client, "imap_class", return_value=mock_imap):
+            async with classic_handler.imap_connection() as imap:
+                assert imap is mock_imap
+
+                # Verify connection sequence
+                mock_imap.wait_hello_from_server.assert_called_once()
+                mock_imap.login.assert_called_once_with("test_user", "test_password")
+                mock_imap.select.assert_called_once()
+
+        # Verify logout after exiting context
+        mock_imap.logout.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cleanup_on_error(self, classic_handler, mock_imap):
+        """Test that logout is called even when an error occurs inside the context."""
+        with patch.object(classic_handler.incoming_client, "imap_class", return_value=mock_imap):
+            with pytest.raises(RuntimeError, match="test error"):
+                async with classic_handler.imap_connection() as _imap:
+                    raise RuntimeError("test error")
+
+        # Logout must still be called
+        mock_imap.logout.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_select_custom_mailbox(self, classic_handler, mock_imap):
+        """Test that a custom mailbox name is passed through _quote_mailbox."""
+        with patch.object(classic_handler.incoming_client, "imap_class", return_value=mock_imap):
+            async with classic_handler.imap_connection(select_mailbox="INBOX.Sent") as _imap:
+                # Verify _quote_mailbox was applied (the mailbox should be quoted)
+                mock_imap.select.assert_called_once_with('"INBOX.Sent"')
+
+    @pytest.mark.asyncio
+    async def test_select_mailbox_failure_raises(self, classic_handler, mock_imap):
+        """Test that a failed mailbox select raises ValueError."""
+        # Make select return a non-OK result
+        mock_select_result = MagicMock()
+        mock_select_result.result = "NO"
+        mock_imap.select = AsyncMock(return_value=mock_select_result)
+
+        with patch.object(classic_handler.incoming_client, "imap_class", return_value=mock_imap):
+            with pytest.raises(ValueError, match="Failed to select mailbox"):
+                async with classic_handler.imap_connection(select_mailbox="NonExistent"):
+                    pass
+
+        # Logout must still be called
+        mock_imap.logout.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_logout_error_suppressed(self, classic_handler, mock_imap):
+        """Test that errors during logout are suppressed, not propagated."""
+        mock_imap.logout = AsyncMock(side_effect=Exception("logout failed"))
+
+        with patch.object(classic_handler.incoming_client, "imap_class", return_value=mock_imap):
+            # Should not raise even though logout fails
+            async with classic_handler.imap_connection() as _imap:
+                pass

@@ -5,6 +5,7 @@ import re
 import ssl
 import time
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from email.header import Header
 from email.mime.application import MIMEApplication
@@ -26,8 +27,10 @@ from mcp_email_server.emails.models import (
     EmailContentBatchResponse,
     EmailMetadata,
     EmailMetadataPageResponse,
+    SaveEmailToFileResponse,
 )
 from mcp_email_server.log import logger
+from mcp_email_server.utils.html_converter import html_to_markdown
 
 # Maximum body length before truncation (characters)
 MAX_BODY_LENGTH = 20000
@@ -48,6 +51,12 @@ def _quote_mailbox(mailbox: str) -> str:
     # Per RFC 3501, literal double-quote characters in a quoted string must
     # be escaped with a backslash. Backslashes themselves must also be escaped.
     escaped = mailbox.replace("\\", "\\\\").replace('"', r"\"")
+    return f'"{escaped}"'
+
+
+def _quote_search_param(param: str) -> str:
+    """Quote and escape IMAP search parameter per RFC 3501 Section 9."""
+    escaped = param.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
 
 
@@ -131,7 +140,7 @@ class EmailClient:
         except Exception:
             return datetime.now(timezone.utc)
 
-    def _parse_email_data(self, raw_email: bytes, email_id: str | None = None) -> dict[str, Any]:  # noqa: C901
+    def _parse_email_data(self, raw_email: bytes, email_id: str | None = None, truncate_body: int | None = None) -> dict[str, Any]:  # noqa: C901
         """Parse raw email data into a structured dictionary."""
         parser = BytesParser(policy=default)
         email_message = parser.parsebytes(raw_email)
@@ -216,9 +225,9 @@ class EmailClient:
                     text = payload.decode("utf-8", errors="replace")
 
                 body = _strip_html(text) if content_type == "text/html" else text
-        # TODO: Allow retrieving full email body
-        if body and len(body) > MAX_BODY_LENGTH:
-            body = body[:MAX_BODY_LENGTH] + "...[TRUNCATED]"
+        limit = truncate_body if truncate_body is not None else MAX_BODY_LENGTH
+        if body and len(body) > limit:
+            body = body[:limit] + "...[TRUNCATED]"
         return {
             "email_id": email_id or "",
             "message_id": message_id,
@@ -249,15 +258,15 @@ class EmailClient:
         if since:
             search_criteria.extend(["SINCE", since.strftime("%d-%b-%Y").upper()])
         if subject:
-            search_criteria.extend(["SUBJECT", subject])
+            search_criteria.extend(["SUBJECT", _quote_search_param(subject)])
         if body:
-            search_criteria.extend(["BODY", body])
+            search_criteria.extend(["BODY", _quote_search_param(body)])
         if text:
-            search_criteria.extend(["TEXT", text])
+            search_criteria.extend(["TEXT", _quote_search_param(text)])
         if from_address:
-            search_criteria.extend(["FROM", from_address])
+            search_criteria.extend(["FROM", _quote_search_param(from_address)])
         if to_address:
-            search_criteria.extend(["TO", to_address])
+            search_criteria.extend(["TO", _quote_search_param(to_address)])
 
         # Flag-based criteria using mapping to reduce complexity
         flag_criteria = [
@@ -562,7 +571,7 @@ class EmailClient:
 
         return None
 
-    async def get_email_body_by_id(self, email_id: str, mailbox: str = "INBOX") -> dict[str, Any] | None:
+    async def get_email_body_by_id(self, email_id: str, mailbox: str = "INBOX", truncate_body: int | None = None) -> dict[str, Any] | None:
         imap = self.imap_class(self.email_server.host, self.email_server.port)
         try:
             # Wait for the connection to be established
@@ -588,7 +597,7 @@ class EmailClient:
 
             # Parse the email
             try:
-                return self._parse_email_data(raw_email, email_id)
+                return self._parse_email_data(raw_email, email_id, truncate_body)
             except Exception as e:
                 logger.error(f"Error parsing email: {e!s}")
                 return None
@@ -956,6 +965,106 @@ class EmailClient:
 
         return deleted_ids, failed_ids
 
+    async def create_folder_if_needed(self, imap, folder_name: str) -> bool:
+        """Create a folder if it doesn't exist, using an existing IMAP connection."""
+        try:
+            _, existing = await imap.list('""', _quote_mailbox(folder_name))
+            if existing and any(isinstance(item, bytes) and len(item) > 2 for item in existing):
+                return True
+
+            await imap.create(_quote_mailbox(folder_name))
+            logger.info(f"Created folder: {folder_name}")
+            return True
+        except Exception as e:
+            logger.error(f"Error creating folder {folder_name}: {e}")
+            return False
+
+    async def move_emails_to_folder(
+        self,
+        email_ids: list[str],
+        target_folder: str,
+        source_mailbox: str = "INBOX",
+        create_if_missing: bool = True,
+    ) -> dict[str, list[str]]:
+        """Move emails to a target folder. Returns dict with 'moved' and 'failed' lists."""
+        moved = []
+        failed = []
+
+        imap = self.imap_class(self.email_server.host, self.email_server.port)
+        try:
+            await imap._client_task
+            await imap.wait_hello_from_server()
+            await imap.login(self.email_server.user_name, self.email_server.password)
+            await _send_imap_id(imap)
+
+            if create_if_missing and not await self.create_folder_if_needed(imap, target_folder):
+                    logger.error(f"Failed to create folder: {target_folder}")
+                    return {"moved": [], "failed": email_ids}
+
+            await imap.select(_quote_mailbox(source_mailbox))
+
+            for email_id in email_ids:
+                try:
+                    # Try MOVE command first (RFC 6851)
+                    try:
+                        response = await imap.uid("move", email_id, _quote_mailbox(target_folder))
+                        if response and response.result == "OK":
+                            logger.info(f"Moved email {email_id} to {target_folder} using MOVE")
+                            moved.append(email_id)
+                            continue
+                    except Exception as move_error:
+                        logger.debug(f"MOVE not supported, falling back to COPY+DELETE: {move_error}")
+
+                    # Fallback to COPY + DELETE
+                    copy_response = await imap.uid("copy", email_id, _quote_mailbox(target_folder))
+                    if copy_response and copy_response.result == "OK":
+                        await imap.uid("store", email_id, "+FLAGS", r"(\Deleted)")
+                        logger.info(f"Moved email {email_id} to {target_folder} using COPY+DELETE")
+                        moved.append(email_id)
+                    else:
+                        logger.error(f"Failed to copy email {email_id}: {copy_response}")
+                        failed.append(email_id)
+
+                except Exception as e:
+                    logger.error(f"Error moving email {email_id} to {target_folder}: {e}")
+                    failed.append(email_id)
+
+            # Expunge deleted messages after all moves
+            if moved:
+                await imap.expunge()
+
+        finally:
+            try:
+                await imap.logout()
+            except Exception as e:
+                logger.info(f"Error during logout: {e}")
+
+        return {"moved": moved, "failed": failed}
+
+
+def _normalize_flags(flags: list[str]) -> list[str]:
+    """Normalize flag format - ensure proper backslash prefix for system flags."""
+    normalized = []
+    for flag in flags:
+        # Handle both bytes and strings from IMAP responses
+        if isinstance(flag, bytes):
+            flag = flag.decode("utf-8", errors="replace")
+        clean_flag = flag.strip().lstrip("\\")
+        normalized.append(f"\\{clean_flag}")
+    return normalized
+
+
+def _build_store_command(operation: str, silent: bool) -> str:
+    """Build STORE command based on operation and silent flag."""
+    commands = {
+        "add": "+FLAGS.SILENT" if silent else "+FLAGS",
+        "remove": "-FLAGS.SILENT" if silent else "-FLAGS",
+        "replace": "FLAGS.SILENT" if silent else "FLAGS",
+    }
+    if operation not in commands:
+        raise ValueError(f"Invalid operation: {operation}")
+    return commands[operation]
+
 
 class ClassicEmailHandler(EmailHandler):
     def __init__(self, email_settings: EmailSettings):
@@ -967,6 +1076,36 @@ class ClassicEmailHandler(EmailHandler):
         )
         self.save_to_sent = email_settings.save_to_sent
         self.sent_folder_name = email_settings.sent_folder_name
+
+    @asynccontextmanager
+    async def imap_connection(self, select_mailbox: str = "INBOX"):
+        """Reusable IMAP connection context manager for the incoming server."""
+        client = self.incoming_client
+        imap = client.imap_class(client.email_server.host, client.email_server.port)
+        try:
+            await imap._client_task
+            await imap.wait_hello_from_server()
+
+            await imap.login(client.email_server.user_name, client.email_server.password)
+            await _send_imap_id(imap)
+
+            if select_mailbox:
+                logger.debug(f"Selecting IMAP mailbox: {select_mailbox}")
+                select_result = await imap.select(_quote_mailbox(select_mailbox))
+
+                if hasattr(select_result, "result") and select_result.result == "OK":
+                    logger.debug(f"Successfully selected mailbox: {select_mailbox}")
+                else:
+                    logger.error(f"Failed to select mailbox {select_mailbox}: {select_result}")
+                    raise ValueError(f"Failed to select mailbox {select_mailbox}")
+
+            yield imap
+
+        finally:
+            try:
+                await imap.logout()
+            except Exception as e:
+                logger.info(f"Error during logout: {e}")
 
     async def get_emails_metadata(
         self,
@@ -1020,14 +1159,16 @@ class ClassicEmailHandler(EmailHandler):
             total=total,
         )
 
-    async def get_emails_content(self, email_ids: list[str], mailbox: str = "INBOX") -> EmailContentBatchResponse:
+    async def get_emails_content(
+        self, email_ids: list[str], mailbox: str = "INBOX", truncate_body: int | None = None
+    ) -> EmailContentBatchResponse:
         """Batch retrieve email body content"""
         emails = []
         failed_ids = []
 
         for email_id in email_ids:
             try:
-                email_data = await self.incoming_client.get_email_body_by_id(email_id, mailbox)
+                email_data = await self.incoming_client.get_email_body_by_id(email_id, mailbox, truncate_body)
                 if email_data:
                     emails.append(
                         EmailBodyResponse(
@@ -1085,6 +1226,40 @@ class ClassicEmailHandler(EmailHandler):
         """Delete emails by their UIDs. Returns (deleted_ids, failed_ids)."""
         return await self.incoming_client.delete_emails(email_ids, mailbox)
 
+    async def list_folders(self, pattern: str = "*") -> list[dict[str, Any]]:
+        """List all IMAP folders with details."""
+        async with self.imap_connection(select_mailbox=None) as imap:
+            _, folders = await imap.list('""', pattern)
+            folder_info = []
+
+            for folder in folders:
+                if isinstance(folder, bytes):
+                    folder_str = folder.decode("utf-8")
+                    # Parse IMAP LIST response: (\Flags) "delimiter" "folder name"
+                    match = re.match(r'\(([^)]*)\)\s+"([^"]+)"\s+"([^"]+)"', folder_str)
+                    if match:
+                        flags, delimiter, name = match.groups()
+                        folder_info.append({
+                            "name": name,
+                            "delimiter": delimiter,
+                            "flags": flags.split() if flags else [],
+                            "can_select": "\\Noselect" not in flags,
+                        })
+
+            return folder_info
+
+    async def move_emails_to_folder(
+        self,
+        email_ids: list[str],
+        target_folder: str,
+        source_mailbox: str = "INBOX",
+        create_if_missing: bool = True,
+    ) -> dict[str, list[str]]:
+        """Move one or more emails to a specified folder."""
+        return await self.incoming_client.move_emails_to_folder(
+            email_ids, target_folder, source_mailbox, create_if_missing
+        )
+
     async def download_attachment(
         self,
         email_id: str,
@@ -1111,3 +1286,202 @@ class ClassicEmailHandler(EmailHandler):
             size=result["size"],
             saved_path=result["saved_path"],
         )
+
+    async def _execute_batch_flag_operation(
+        self, imap, uid_list: str, store_cmd: str, flags_str: str, email_ids: list[str], operation: str
+    ) -> dict[str, bool]:
+        """Execute batch flag operation and return results."""
+        results = {}
+        response = await imap.uid("store", uid_list, store_cmd, flags_str)
+
+        if response and response.result == "OK":
+            for eid in email_ids:
+                results[str(eid)] = True
+            logger.info(f"Successfully {operation} flags {flags_str} on {len(email_ids)} emails")
+        else:
+            for eid in email_ids:
+                results[str(eid)] = False
+            logger.error(f"Failed to {operation} flags {flags_str}: {response}")
+
+        return results
+
+    async def _execute_individual_flag_operations(
+        self, imap, email_ids: list[str], store_cmd: str, flags_str: str, operation: str
+    ) -> dict[str, bool]:
+        """Execute individual flag operations as fallback."""
+        results = {}
+        for eid in email_ids:
+            try:
+                response = await imap.uid("store", str(eid), store_cmd, flags_str)
+                results[str(eid)] = response and response.result == "OK"
+                if not results[str(eid)]:
+                    logger.error(f"Failed to {operation} flags on UID {eid}: {response}")
+            except Exception as individual_error:
+                logger.error(f"Error modifying flags on UID {eid}: {individual_error}")
+                results[str(eid)] = False
+        return results
+
+    async def _modify_flags(
+        self, email_ids: list[str], flags: list[str], operation: str, silent: bool = False
+    ) -> dict[str, bool]:
+        """Core flag modification method using IMAP STORE command."""
+        if not email_ids or not flags:
+            return {}
+
+        normalized_flags = _normalize_flags(flags)
+        flags_str = f"({' '.join(normalized_flags)})"
+        store_cmd = _build_store_command(operation, silent)
+        uid_list = ",".join(str(eid) for eid in email_ids)
+
+        try:
+            async with self.imap_connection() as imap:
+                try:
+                    return await self._execute_batch_flag_operation(
+                        imap, uid_list, store_cmd, flags_str, email_ids, operation
+                    )
+                except Exception as e:
+                    logger.warning(f"Batch flag operation failed, trying individual operations: {e}")
+                    return await self._execute_individual_flag_operations(
+                        imap, email_ids, store_cmd, flags_str, operation
+                    )
+
+        except Exception as e:
+            logger.error(f"Error in flag modification: {e}")
+            return {str(eid): False for eid in email_ids}
+
+    async def add_flags(self, email_ids: list[str], flags: list[str], silent: bool = False) -> dict[str, bool]:
+        """Add flags to emails using +FLAGS operation."""
+        return await self._modify_flags(email_ids, flags, "add", silent)
+
+    async def remove_flags(self, email_ids: list[str], flags: list[str], silent: bool = False) -> dict[str, bool]:
+        """Remove flags from emails using -FLAGS operation."""
+        return await self._modify_flags(email_ids, flags, "remove", silent)
+
+    async def replace_flags(self, email_ids: list[str], flags: list[str], silent: bool = False) -> dict[str, bool]:
+        """Replace all flags on emails using FLAGS operation."""
+        return await self._modify_flags(email_ids, flags, "replace", silent)
+
+    async def save_email_to_file(  # noqa: C901
+        self,
+        email_id: str,
+        file_path: str,
+        output_format: str = "markdown",
+        include_headers: bool = True,
+        mailbox: str = "INBOX",
+    ) -> SaveEmailToFileResponse:
+        """Save a complete email to a file without truncation.
+
+        Args:
+            email_id: The UID of the email to save.
+            file_path: The file path where to save the email content.
+            output_format: 'html' for original HTML, 'markdown' to convert HTML to markdown.
+            include_headers: Include email headers (subject, from, date, etc.).
+            mailbox: The mailbox to search in (default: "INBOX").
+        """
+        client = self.incoming_client
+        imap = client.imap_class(client.email_server.host, client.email_server.port)
+        try:
+            await imap._client_task
+            await imap.wait_hello_from_server()
+            await imap.login(client.email_server.user_name, client.email_server.password)
+            await _send_imap_id(imap)
+            await imap.select(_quote_mailbox(mailbox))
+
+            data = await client._fetch_email_with_formats(imap, email_id)
+            if not data:
+                msg = f"Failed to fetch email with UID {email_id}"
+                logger.error(msg)
+                raise ValueError(msg)
+
+            raw_email = client._extract_raw_email(data)
+            if not raw_email:
+                msg = f"Could not find email data for email ID: {email_id}"
+                logger.error(msg)
+                raise ValueError(msg)
+
+            # Parse the email to extract parts
+            parser = BytesParser(policy=default)
+            email_message = parser.parsebytes(raw_email)
+
+            subject = email_message.get("Subject", "")
+            sender = email_message.get("From", "")
+            date_str = email_message.get("Date", "")
+
+            # Extract body content preserving original format
+            text_body = ""
+            html_body = ""
+
+            if email_message.is_multipart():
+                for part in email_message.walk():
+                    content_type = part.get_content_type()
+                    content_disposition = str(part.get("Content-Disposition", ""))
+                    if "attachment" in content_disposition:
+                        continue
+                    if content_type == "text/plain" and not text_body:
+                        payload = part.get_payload(decode=True)
+                        if payload:
+                            charset = part.get_content_charset("utf-8")
+                            try:
+                                text_body = payload.decode(charset)
+                            except UnicodeDecodeError:
+                                text_body = payload.decode("utf-8", errors="replace")
+                    elif content_type == "text/html" and not html_body:
+                        payload = part.get_payload(decode=True)
+                        if payload:
+                            charset = part.get_content_charset("utf-8")
+                            try:
+                                html_body = payload.decode(charset)
+                            except UnicodeDecodeError:
+                                html_body = payload.decode("utf-8", errors="replace")
+            else:
+                content_type = email_message.get_content_type()
+                payload = email_message.get_payload(decode=True)
+                if payload:
+                    charset = email_message.get_content_charset("utf-8")
+                    try:
+                        decoded = payload.decode(charset)
+                    except UnicodeDecodeError:
+                        decoded = payload.decode("utf-8", errors="replace")
+                    if content_type == "text/html":
+                        html_body = decoded
+                    else:
+                        text_body = decoded
+
+            # Determine output content based on format
+            if output_format == "html":
+                body = html_body or text_body
+            else:
+                # markdown: convert HTML if available, otherwise use plain text
+                body = html_to_markdown(html_body) if html_body else text_body
+
+            # Build file content
+            parts = []
+            if include_headers:
+                parts.append(f"Subject: {subject}")
+                parts.append(f"From: {sender}")
+                parts.append(f"Date: {date_str}")
+                parts.append(f"Email-ID: {email_id}")
+                parts.append("")
+                parts.append("---")
+                parts.append("")
+
+            parts.append(body)
+            content = "\n".join(parts)
+
+            # Write to file
+            save_path = Path(file_path)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            save_path.write_text(content, encoding="utf-8")
+
+            return SaveEmailToFileResponse(
+                email_id=email_id,
+                file_path=str(save_path.resolve()),
+                content_length=len(content),
+                output_format=output_format,
+            )
+
+        finally:
+            try:
+                await imap.logout()
+            except Exception as e:
+                logger.info(f"Error during logout: {e}")
