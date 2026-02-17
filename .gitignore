@@ -142,3 +142,7 @@ cython_debug/
 tests/config.toml
 local/
 config.toml
+
+# Claude Code local config
+.claude/
+.mcp.json
