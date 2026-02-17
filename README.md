@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/github/license/ai-zerolab/mcp-email-server)](https://img.shields.io/github/license/ai-zerolab/mcp-email-server)
 [![smithery badge](https://smithery.ai/badge/@ai-zerolab/mcp-email-server)](https://smithery.ai/server/@ai-zerolab/mcp-email-server)
 
-IMAP and SMTP via MCP Server
+IMAP and SMTP email client — available as both an MCP Server and a standalone CLI tool.
 
 - **Github repository**: <https://github.com/ai-zerolab/mcp-email-server/>
 - **Documentation** <https://ai-zerolab.github.io/mcp-email-server/>
@@ -78,6 +78,7 @@ You can also configure the email server using environment variables, which is pa
 | `MCP_EMAIL_SERVER_SMTP_SSL`                   | Enable SMTP SSL                                   | `true`        | No       |
 | `MCP_EMAIL_SERVER_SMTP_START_SSL`             | Enable STARTTLS                                   | `false`       | No       |
 | `MCP_EMAIL_SERVER_SMTP_VERIFY_SSL`            | Verify SSL certificates (disable for self-signed) | `true`        | No       |
+| `MCP_EMAIL_SERVER_LOG_LEVEL`                  | Log level (DEBUG, INFO, WARNING, ERROR)           | `INFO`        | No       |
 | `MCP_EMAIL_SERVER_ENABLE_ATTACHMENT_DOWNLOAD` | Enable attachment download                        | `false`       | No       |
 | `MCP_EMAIL_SERVER_SAVE_TO_SENT`               | Save sent emails to IMAP Sent folder              | `true`        | No       |
 | `MCP_EMAIL_SERVER_SENT_FOLDER_NAME`           | Custom Sent folder name (auto-detect if not set)  | -             | No       |
@@ -219,7 +220,99 @@ To install Email Server for Claude Desktop automatically via [Smithery](https://
 npx -y @smithery/cli install @ai-zerolab/mcp-email-server --client claude
 ```
 
-## Usage
+## CLI Usage
+
+The `mcp-email-server` command provides a full-featured CLI for managing emails directly from the terminal.
+
+### Installation
+
+```bash
+# Install globally (editable, for development)
+uv tool install -e .
+
+# Or install from PyPI
+uv tool install mcp-email-server
+```
+
+After installation, `mcp-email-server` is available as a global command.
+
+### Account Management
+
+```bash
+# List configured accounts
+mcp-email-server accounts list
+
+# Add a new account interactively
+mcp-email-server accounts add
+
+# Remove an account
+mcp-email-server accounts remove "my-account"
+```
+
+### Email Operations
+
+```bash
+# List emails (paginated)
+mcp-email-server emails list -a "my-account"
+mcp-email-server emails list -a "my-account" --page-size 20 --from "boss@example.com"
+
+# Read full email content
+mcp-email-server emails read -a "my-account" 12345
+
+# Send an email
+mcp-email-server emails send -a "my-account" --to "user@example.com" --subject "Hello" --body "Hi there"
+
+# Pipe body from stdin
+echo "Email body here" | mcp-email-server emails send -a "my-account" --to "user@example.com" --subject "Hello"
+
+# Delete emails
+mcp-email-server emails delete -a "my-account" 12345 12346
+
+# Move emails to a folder
+mcp-email-server emails move -a "my-account" 12345 --target-folder "Archive"
+
+# Save email to file
+mcp-email-server emails save -a "my-account" 12345 output.md
+```
+
+### Folder Operations
+
+```bash
+# List all mailbox folders
+mcp-email-server folders list -a "my-account"
+```
+
+### Flag Management
+
+```bash
+# Add flags to emails
+mcp-email-server flags add -a "my-account" 12345 --flag Seen --flag Flagged
+
+# Remove flags
+mcp-email-server flags remove -a "my-account" 12345 --flag Flagged
+
+# Replace all flags
+mcp-email-server flags replace -a "my-account" 12345 --flag Seen
+```
+
+### Logging
+
+CLI commands default to `WARNING` log level for clean output. MCP server commands (`stdio`, `sse`, `streamable-http`) default to `INFO`. Override with:
+
+```bash
+MCP_EMAIL_SERVER_LOG_LEVEL=DEBUG mcp-email-server emails list -a "my-account"
+```
+
+### JSON Output
+
+All commands support `--json` / `-j` for machine-readable output, useful for scripting and piping:
+
+```bash
+mcp-email-server emails list -a "my-account" --json | jq '.emails[].subject'
+mcp-email-server accounts list --json
+```
+
+## MCP Usage
 
 ### Replying to Emails
 
