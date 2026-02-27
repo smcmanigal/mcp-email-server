@@ -85,3 +85,43 @@ class TestDispatcher:
             # Verify get_account was called correctly
             mock_settings.get_account.assert_called_once_with("nonexistent_account")
             mock_settings.get_accounts.assert_called_once()
+
+    def test_dispatch_handler_with_oauth2_email_settings(self):
+        """Test dispatch_handler with OAuth2-configured email account dispatches to ClassicEmailHandler."""
+        email_settings = EmailSettings(
+            account_name="oauth2_account",
+            full_name="OAuth2 User",
+            email_address="user@outlook.com",
+            incoming=EmailServer(
+                user_name="user@outlook.com",
+                host="outlook.office365.com",
+                port=993,
+                use_ssl=True,
+            ),
+            outgoing=EmailServer(
+                user_name="user@outlook.com",
+                host="smtp.office365.com",
+                port=587,
+                use_ssl=False,
+                start_ssl=True,
+            ),
+            auth_type="oauth2",
+            oauth2_provider="microsoft",
+            oauth2_client_id="test-client-id",
+            oauth2_tenant_id="test-tenant",
+        )
+
+        mock_settings = MagicMock()
+        mock_settings.get_account.return_value = email_settings
+
+        with patch("mcp_email_server.emails.dispatcher.get_settings", return_value=mock_settings):
+            handler = dispatch_handler("oauth2_account")
+
+            assert isinstance(handler, ClassicEmailHandler)
+            assert handler.email_settings == email_settings
+            # Verify OAuth2 config was threaded to the clients
+            assert handler.incoming_client.auth_type == "oauth2"
+            assert handler.incoming_client.oauth2_provider == "microsoft"
+            assert handler.incoming_client.oauth2_client_id == "test-client-id"
+            assert handler.outgoing_client.auth_type == "oauth2"
+            assert handler.outgoing_client.oauth2_provider == "microsoft"

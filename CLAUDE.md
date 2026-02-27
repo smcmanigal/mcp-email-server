@@ -1,0 +1,67 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Commands
+
+```bash
+# Install dependencies and pre-commit hooks
+make install          # uv sync + pre-commit install
+
+# Run tests
+make test             # pytest with coverage
+uv run python -m pytest tests/test_config.py -vv -s   # single test file
+uv run python -m pytest -k "test_dispatch_handler" -vv # single test by name
+
+# Lint / code quality
+make check            # lock file check + pre-commit + deptry
+
+# Run the MCP server locally (stdio transport)
+uv run mcp-email-server stdio
+
+# Configure via UI
+uv run mcp-email-server ui
+
+# CLI (after global install)
+mcp-email-server accounts list
+mcp-email-server accounts add-oauth2          # interactive OAuth2 setup (M365/Google)
+mcp-email-server emails list -a "Account Name" --since "2026-01-01T00:00:00"
+mcp-email-server emails read -a "Account Name" <email_id>
+```
+
+## Architecture
+
+The project is both an **MCP server** and a **CLI tool** sharing the same core logic.
+
+### Entry points
+- **MCP server**: `mcp_email_server/app.py` — defines all MCP tools using `FastMCP`. Each tool calls `dispatch_handler(account_name)` to get an `EmailHandler`, then delegates.
+- **CLI**: `mcp_email_server/cli/__init__.py` — Typer app that registers sub-apps (`accounts`, `emails`, `folders`, `flags`) and top-level commands (`stdio`, `sse`, `streamable-http`, `ui`, `reset`). The CLI sub-commands in `cli/emails.py`, etc. call the same underlying handler methods.
+
+### Handler abstraction
+- `mcp_email_server/emails/__init__.py` — abstract base class `EmailHandler` defining the contract for all email operations.
+- `mcp_email_server/emails/classic.py` — `ClassicEmailHandler`: the only concrete implementation, using `aioimaplib` (IMAP) and `aiosmtplib` (SMTP).
+- `mcp_email_server/emails/dispatcher.py` — `dispatch_handler(account_name)` looks up the account in settings and returns the appropriate handler. Currently only `EmailSettings` → `ClassicEmailHandler` is implemented; `ProviderSettings` raises `NotImplementedError`.
+
+### Configuration
+- `mcp_email_server/config.py` — Pydantic/pydantic-settings models. Config is stored as TOML at `~/.config/zerolib/mcp_email_server/config.toml` (overridable via `MCP_EMAIL_SERVER_CONFIG_PATH`).
+- Environment variables (prefixed `MCP_EMAIL_SERVER_`) take precedence over TOML for account credentials. `Settings.__init__` merges env-sourced accounts at startup.
+- `get_settings()` is a module-level singleton; call `get_settings(reload=True)` to force a reload.
+
+### OAuth2 / XOAUTH2 authentication
+- `mcp_email_server/oauth2.py` — Token managers for Microsoft 365 (MSAL) and Google. Abstract base `OAuth2TokenManager` with concrete `MSALTokenManager` and `GoogleTokenManager`. Factory: `get_token_manager(provider, client_id, ...)`.
+- **Config fields** on `EmailSettings`: `auth_type` (`"password"` or `"oauth2"`), `oauth2_provider` (`"microsoft"` or `"google"`), `oauth2_client_id`, `oauth2_tenant_id`, `oauth2_client_secret`.
+- **Auth helpers** in `classic.py`: `_imap_authenticate()` and `_smtp_authenticate()` dispatch between `imap.login()` / `smtp.login()` (password) and XOAUTH2 SASL (OAuth2). All 10 login call sites use these helpers.
+- **Token cache**: `~/.config/zerolib/mcp_email_server/oauth2_token_cache.json` (MSAL/M365), `google_token_cache.json` (Google). File permissions `0600`.
+- **CLI**: `mcp-email-server accounts add-oauth2` — interactive device code flow setup.
+- **MCP tools**: `initiate_oauth2_setup` / `complete_oauth2_setup` — two-step device code flow for AI-assisted setup.
+- **Cleanup**: `Settings.delete_email()` automatically removes cached OAuth2 tokens.
+
+### Key design notes
+- Email IDs are IMAP UIDs (strings). Always obtain them from `list_emails_metadata` before calling content/delete/flag operations.
+- `delete_emails` is a **hard delete** (sets `\Deleted` flag + `EXPUNGE`) — not a move to Trash. When a user asks to "delete" emails, default to moving them to Trash (`emails move --target-folder Trash`) unless they explicitly request permanent deletion.
+- Mailbox names are always quoted via `_quote_mailbox()` for RFC 3501 compatibility with strict servers.
+- Body content is truncated to 20,000 characters by default (`MAX_BODY_LENGTH` in `classic.py`); use `truncate_body` param or `save_email_to_file` for full content.
+- Attachment download is disabled by default; must be explicitly enabled via `enable_attachment_download = true` in config or env var.
+
+## Linting
+Ruff is configured with line length 120, targeting Python 3.10+. `fix = true` auto-fixes on run.

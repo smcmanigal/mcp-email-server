@@ -32,7 +32,7 @@ CONFIG_PATH = Path(os.getenv("MCP_EMAIL_SERVER_CONFIG_PATH", DEFAULT_CONFIG_PATH
 
 class EmailServer(BaseModel):
     user_name: str
-    password: str
+    password: str = ""
     host: str
     port: int
     use_ssl: bool = True  # Usually port 465
@@ -86,6 +86,11 @@ class EmailSettings(AccountAttributes):
     outgoing: EmailServer
     save_to_sent: bool = True  # Save sent emails to IMAP Sent folder
     sent_folder_name: str | None = None  # Override Sent folder name (auto-detect if None)
+    auth_type: str = "password"  # "password" or "oauth2"
+    oauth2_provider: str | None = None  # "microsoft" or "google"
+    oauth2_client_id: str | None = None
+    oauth2_tenant_id: str | None = None  # Microsoft only, defaults to "common"
+    oauth2_client_secret: str | None = None  # Google requires this for device code flow
 
     @classmethod
     def init(
@@ -95,7 +100,7 @@ class EmailSettings(AccountAttributes):
         full_name: str,
         email_address: str,
         user_name: str,
-        password: str,
+        password: str = "",
         imap_host: str,
         smtp_host: str,
         imap_user_name: str | None = None,
@@ -110,6 +115,11 @@ class EmailSettings(AccountAttributes):
         smtp_password: str | None = None,
         save_to_sent: bool = True,
         sent_folder_name: str | None = None,
+        auth_type: str = "password",
+        oauth2_provider: str | None = None,
+        oauth2_client_id: str | None = None,
+        oauth2_tenant_id: str | None = None,
+        oauth2_client_secret: str | None = None,
     ) -> EmailSettings:
         return cls(
             account_name=account_name,
@@ -133,6 +143,11 @@ class EmailSettings(AccountAttributes):
             ),
             save_to_sent=save_to_sent,
             sent_folder_name=sent_folder_name,
+            auth_type=auth_type,
+            oauth2_provider=oauth2_provider,
+            oauth2_client_id=oauth2_client_id,
+            oauth2_tenant_id=oauth2_tenant_id,
+            oauth2_client_secret=oauth2_client_secret,
         )
 
     @classmethod
@@ -158,9 +173,10 @@ class EmailSettings(AccountAttributes):
         """
         # Check if minimum required environment variables are set
         email_address = os.getenv("MCP_EMAIL_SERVER_EMAIL_ADDRESS")
-        password = os.getenv("MCP_EMAIL_SERVER_PASSWORD")
+        password = os.getenv("MCP_EMAIL_SERVER_PASSWORD", "")
+        auth_type = os.getenv("MCP_EMAIL_SERVER_AUTH_TYPE", "password")
 
-        if not email_address or not password:
+        if not email_address or (auth_type != "oauth2" and not password):
             return None
 
         # Get all environment variables with defaults
@@ -196,6 +212,11 @@ class EmailSettings(AccountAttributes):
                 imap_password=os.getenv("MCP_EMAIL_SERVER_IMAP_PASSWORD", password),
                 save_to_sent=_parse_bool_env(os.getenv("MCP_EMAIL_SERVER_SAVE_TO_SENT"), True),
                 sent_folder_name=os.getenv("MCP_EMAIL_SERVER_SENT_FOLDER_NAME"),
+                auth_type=auth_type,
+                oauth2_provider=os.getenv("MCP_EMAIL_SERVER_OAUTH2_PROVIDER"),
+                oauth2_client_id=os.getenv("MCP_EMAIL_SERVER_OAUTH2_CLIENT_ID"),
+                oauth2_tenant_id=os.getenv("MCP_EMAIL_SERVER_OAUTH2_TENANT_ID"),
+                oauth2_client_secret=os.getenv("MCP_EMAIL_SERVER_OAUTH2_CLIENT_SECRET"),
             )
         except (ValueError, TypeError) as e:
             logger.error(f"Failed to create email settings from environment variables: {e}")
@@ -265,6 +286,21 @@ class Settings(BaseSettings):
 
     def delete_email(self, account_name: str) -> None:
         """Use re-assigned for validation to work."""
+        # Find account before deleting to check for OAuth2
+        account = self.get_account(account_name)
+        if isinstance(account, EmailSettings) and account.auth_type == "oauth2" and account.oauth2_provider and account.oauth2_client_id:
+            try:
+                from mcp_email_server.oauth2 import get_token_manager
+
+                manager = get_token_manager(
+                    provider=account.oauth2_provider,
+                    client_id=account.oauth2_client_id,
+                    tenant_id=account.oauth2_tenant_id or "common",
+                    client_secret=account.oauth2_client_secret,
+                )
+                manager.remove_account(account.email_address)
+            except Exception as e:
+                logger.warning(f"Failed to clean up OAuth2 tokens for {account_name}: {e}")
         self.emails = [email for email in self.emails if email.account_name != account_name]
 
     def delete_provider(self, account_name: str) -> None:

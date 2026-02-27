@@ -20,10 +20,13 @@ classifiers = [
 dependencies = [
     "aioimaplib>=2.0.1",
     "aiosmtplib>=4.0.0",
+    "google-auth>=2.0.0",
+    "google-auth-oauthlib>=1.0.0",
     "gradio>=6.0.1",
     "jinja2>=3.1.5",
     "loguru>=0.7.3",
     "mcp[cli]>=1.23.0,<2",
+    "msal>=1.25.0",
     "pydantic>=2.11.0",
     "pydantic-settings[toml]>=2.11.0",
     "tomli-w>=1.2.0",
@@ -113,7 +116,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101", "S106", "SIM117"]
+"tests/*" = ["S101", "S105", "S106", "SIM117"]
 "tests/conftest.py" = ["E402"]
 
 [tool.ruff.format]

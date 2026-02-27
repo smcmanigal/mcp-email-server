@@ -3,12 +3,11 @@ from __future__ import annotations
 import asyncio
 import sys
 from datetime import datetime
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
 from mcp_email_server.cli.formatting import (
-    console,
     print_email_content,
     print_email_table,
     print_error,
@@ -26,12 +25,12 @@ def list_emails(
     mailbox: Annotated[str, typer.Option(help="Mailbox to search")] = "INBOX",
     page: Annotated[int, typer.Option(help="Page number")] = 1,
     page_size: Annotated[int, typer.Option("--page-size", help="Emails per page")] = 10,
-    since: Annotated[Optional[datetime], typer.Option(help="Filter emails since datetime")] = None,
-    before: Annotated[Optional[datetime], typer.Option(help="Filter emails before datetime")] = None,
-    subject: Annotated[Optional[str], typer.Option(help="Filter by subject")] = None,
-    from_address: Annotated[Optional[str], typer.Option("--from", help="Filter by sender address")] = None,
-    seen: Annotated[Optional[bool], typer.Option(help="Filter by read status")] = None,
-    flagged: Annotated[Optional[bool], typer.Option(help="Filter by flagged status")] = None,
+    since: Annotated[datetime | None, typer.Option(help="Filter emails since datetime")] = None,
+    before: Annotated[datetime | None, typer.Option(help="Filter emails before datetime")] = None,
+    subject: Annotated[str | None, typer.Option(help="Filter by subject")] = None,
+    from_address: Annotated[str | None, typer.Option("--from", help="Filter by sender address")] = None,
+    seen: Annotated[bool | None, typer.Option(help="Filter by read status")] = None,
+    flagged: Annotated[bool | None, typer.Option(help="Filter by flagged status")] = None,
     json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
 ) -> None:
     """List email metadata (paginated)."""
@@ -65,7 +64,7 @@ def read_emails(
     email_ids: Annotated[list[str], typer.Argument(help="Email IDs to read")],
     account: Annotated[str, typer.Option("--account", "-a", help="Email account name")],
     mailbox: Annotated[str, typer.Option(help="Mailbox to search")] = "INBOX",
-    truncate: Annotated[Optional[int], typer.Option(help="Max body characters")] = None,
+    truncate: Annotated[int | None, typer.Option(help="Max body characters")] = None,
     json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
 ) -> None:
     """Get full email content by ID."""
@@ -89,12 +88,12 @@ def send_email(
     account: Annotated[str, typer.Option("--account", "-a", help="Email account name")],
     to: Annotated[list[str], typer.Option("--to", help="Recipient email addresses")],
     subject: Annotated[str, typer.Option("--subject", "-s", help="Email subject")],
-    body: Annotated[Optional[str], typer.Option("--body", "-b", help="Email body (reads from stdin if omitted)")] = None,
-    cc: Annotated[Optional[list[str]], typer.Option("--cc", help="CC email addresses")] = None,
-    bcc: Annotated[Optional[list[str]], typer.Option("--bcc", help="BCC email addresses")] = None,
+    body: Annotated[str | None, typer.Option("--body", "-b", help="Email body (reads from stdin if omitted)")] = None,
+    cc: Annotated[list[str] | None, typer.Option("--cc", help="CC email addresses")] = None,
+    bcc: Annotated[list[str] | None, typer.Option("--bcc", help="BCC email addresses")] = None,
     html: Annotated[bool, typer.Option("--html", help="Send as HTML")] = False,
-    attachment: Annotated[Optional[list[str]], typer.Option("--attachment", help="File paths to attach")] = None,
-    reply_to: Annotated[Optional[str], typer.Option("--reply-to", help="Message-ID to reply to")] = None,
+    attachment: Annotated[list[str] | None, typer.Option("--attachment", help="File paths to attach")] = None,
+    reply_to: Annotated[str | None, typer.Option("--reply-to", help="Message-ID to reply to")] = None,
 ) -> None:
     """Send an email."""
     try:

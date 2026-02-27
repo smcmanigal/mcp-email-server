@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import email.utils
 import mimetypes
 import re
@@ -102,10 +103,91 @@ def _create_smtp_ssl_context(verify_ssl: bool) -> ssl.SSLContext | None:
     return ctx
 
 
+def _build_xoauth2_string(user: str, access_token: str) -> str:
+    """Build XOAUTH2 SASL authentication string."""
+    return f"user={user}\x01auth=Bearer {access_token}\x01\x01"
+
+
+async def _imap_authenticate(
+    imap,
+    email_server: EmailServer,
+    auth_type: str = "password",
+    email_address: str = "",
+    oauth2_provider: str | None = None,
+    oauth2_client_id: str | None = None,
+    oauth2_tenant_id: str | None = None,
+    oauth2_client_secret: str | None = None,
+) -> None:
+    """Authenticate to IMAP server using password or OAuth2."""
+    if auth_type == "oauth2":
+        from mcp_email_server.oauth2 import get_token_manager
+
+        manager = get_token_manager(
+            provider=oauth2_provider,
+            client_id=oauth2_client_id,
+            tenant_id=oauth2_tenant_id or "common",
+            client_secret=oauth2_client_secret,
+        )
+        access_token = manager.get_access_token(email_address)
+        auth_string = _build_xoauth2_string(email_address, access_token)
+        auth_bytes = base64.b64encode(auth_string.encode()).decode()
+        # Use IMAP AUTHENTICATE command with XOAUTH2 mechanism
+        response = await imap.authenticate("XOAUTH2", lambda _: auth_bytes)
+        if hasattr(response, "result") and response.result != "OK":
+            raise RuntimeError(f"IMAP XOAUTH2 authentication failed: {response}")
+    else:
+        await imap.login(email_server.user_name, email_server.password)
+
+
+async def _smtp_authenticate(
+    smtp,
+    email_server: EmailServer,
+    auth_type: str = "password",
+    email_address: str = "",
+    oauth2_provider: str | None = None,
+    oauth2_client_id: str | None = None,
+    oauth2_tenant_id: str | None = None,
+    oauth2_client_secret: str | None = None,
+) -> None:
+    """Authenticate to SMTP server using password or OAuth2."""
+    if auth_type == "oauth2":
+        from mcp_email_server.oauth2 import get_token_manager
+
+        manager = get_token_manager(
+            provider=oauth2_provider,
+            client_id=oauth2_client_id,
+            tenant_id=oauth2_tenant_id or "common",
+            client_secret=oauth2_client_secret,
+        )
+        access_token = manager.get_access_token(email_address)
+        auth_string = _build_xoauth2_string(email_address, access_token)
+        auth_bytes = base64.b64encode(auth_string.encode()).decode()
+        # Send AUTH XOAUTH2 command manually
+        await smtp.execute_command(b"AUTH", b"XOAUTH2", auth_bytes.encode())
+    else:
+        await smtp.login(email_server.user_name, email_server.password)
+
+
 class EmailClient:
-    def __init__(self, email_server: EmailServer, sender: str | None = None):
+    def __init__(
+        self,
+        email_server: EmailServer,
+        sender: str | None = None,
+        auth_type: str = "password",
+        email_address: str = "",
+        oauth2_provider: str | None = None,
+        oauth2_client_id: str | None = None,
+        oauth2_tenant_id: str | None = None,
+        oauth2_client_secret: str | None = None,
+    ):
         self.email_server = email_server
         self.sender = sender or email_server.user_name
+        self.auth_type = auth_type
+        self.email_address = email_address
+        self.oauth2_provider = oauth2_provider
+        self.oauth2_client_id = oauth2_client_id
+        self.oauth2_tenant_id = oauth2_tenant_id
+        self.oauth2_client_secret = oauth2_client_secret
 
         self.imap_class = aioimaplib.IMAP4_SSL if self.email_server.use_ssl else aioimaplib.IMAP4
 
@@ -419,7 +501,8 @@ class EmailClient:
             await imap.wait_hello_from_server()
 
             # Login and select inbox
-            await imap.login(self.email_server.user_name, self.email_server.password)
+            await _imap_authenticate(imap, self.email_server, self.auth_type, self.email_address,
+                                     self.oauth2_provider, self.oauth2_client_id, self.oauth2_tenant_id, self.oauth2_client_secret)
             await _send_imap_id(imap)
             await imap.select(_quote_mailbox(mailbox))
             search_criteria = self._build_search_criteria(
@@ -465,7 +548,8 @@ class EmailClient:
             await imap.wait_hello_from_server()
 
             # Login and select mailbox
-            await imap.login(self.email_server.user_name, self.email_server.password)
+            await _imap_authenticate(imap, self.email_server, self.auth_type, self.email_address,
+                                     self.oauth2_provider, self.oauth2_client_id, self.oauth2_tenant_id, self.oauth2_client_secret)
             await _send_imap_id(imap)
             await imap.select(_quote_mailbox(mailbox))
 
@@ -579,7 +663,8 @@ class EmailClient:
             await imap.wait_hello_from_server()
 
             # Login and select inbox
-            await imap.login(self.email_server.user_name, self.email_server.password)
+            await _imap_authenticate(imap, self.email_server, self.auth_type, self.email_address,
+                                     self.oauth2_provider, self.oauth2_client_id, self.oauth2_tenant_id, self.oauth2_client_secret)
             await _send_imap_id(imap)
             await imap.select(_quote_mailbox(mailbox))
 
@@ -632,7 +717,8 @@ class EmailClient:
             await imap._client_task
             await imap.wait_hello_from_server()
 
-            await imap.login(self.email_server.user_name, self.email_server.password)
+            await _imap_authenticate(imap, self.email_server, self.auth_type, self.email_address,
+                                     self.oauth2_provider, self.oauth2_client_id, self.oauth2_tenant_id, self.oauth2_client_secret)
             await _send_imap_id(imap)
             await imap.select(_quote_mailbox(mailbox))
 
@@ -801,7 +887,8 @@ class EmailClient:
             use_tls=self.smtp_use_tls,
             tls_context=self._get_smtp_ssl_context(),
         ) as smtp:
-            await smtp.login(self.email_server.user_name, self.email_server.password)
+            await _smtp_authenticate(smtp, self.email_server, self.auth_type, self.email_address,
+                                     self.oauth2_provider, self.oauth2_client_id, self.oauth2_tenant_id, self.oauth2_client_secret)
 
             # Create a combined list of all recipients for delivery
             all_recipients = recipients.copy()
@@ -851,6 +938,12 @@ class EmailClient:
         msg: MIMEText | MIMEMultipart,
         incoming_server: EmailServer,
         sent_folder_name: str | None = None,
+        auth_type: str = "password",
+        email_address: str = "",
+        oauth2_provider: str | None = None,
+        oauth2_client_id: str | None = None,
+        oauth2_tenant_id: str | None = None,
+        oauth2_client_secret: str | None = None,
     ) -> bool:
         """Append a sent message to the IMAP Sent folder.
 
@@ -881,7 +974,8 @@ class EmailClient:
         try:
             await imap._client_task
             await imap.wait_hello_from_server()
-            await imap.login(incoming_server.user_name, incoming_server.password)
+            await _imap_authenticate(imap, incoming_server, auth_type, email_address,
+                                     oauth2_provider, oauth2_client_id, oauth2_tenant_id, oauth2_client_secret)
             await _send_imap_id(imap)
 
             # Try to find Sent folder by IMAP \Sent flag first
@@ -944,7 +1038,8 @@ class EmailClient:
         try:
             await imap._client_task
             await imap.wait_hello_from_server()
-            await imap.login(self.email_server.user_name, self.email_server.password)
+            await _imap_authenticate(imap, self.email_server, self.auth_type, self.email_address,
+                                     self.oauth2_provider, self.oauth2_client_id, self.oauth2_tenant_id, self.oauth2_client_secret)
             await _send_imap_id(imap)
             await imap.select(_quote_mailbox(mailbox))
 
@@ -994,7 +1089,8 @@ class EmailClient:
         try:
             await imap._client_task
             await imap.wait_hello_from_server()
-            await imap.login(self.email_server.user_name, self.email_server.password)
+            await _imap_authenticate(imap, self.email_server, self.auth_type, self.email_address,
+                                     self.oauth2_provider, self.oauth2_client_id, self.oauth2_tenant_id, self.oauth2_client_secret)
             await _send_imap_id(imap)
 
             if create_if_missing and not await self.create_folder_if_needed(imap, target_folder):
@@ -1069,10 +1165,19 @@ def _build_store_command(operation: str, silent: bool) -> str:
 class ClassicEmailHandler(EmailHandler):
     def __init__(self, email_settings: EmailSettings):
         self.email_settings = email_settings
-        self.incoming_client = EmailClient(email_settings.incoming)
+        oauth2_kwargs = {
+            "auth_type": email_settings.auth_type,
+            "email_address": email_settings.email_address,
+            "oauth2_provider": email_settings.oauth2_provider,
+            "oauth2_client_id": email_settings.oauth2_client_id,
+            "oauth2_tenant_id": email_settings.oauth2_tenant_id,
+            "oauth2_client_secret": email_settings.oauth2_client_secret,
+        }
+        self.incoming_client = EmailClient(email_settings.incoming, **oauth2_kwargs)
         self.outgoing_client = EmailClient(
             email_settings.outgoing,
             sender=f"{email_settings.full_name} <{email_settings.email_address}>",
+            **oauth2_kwargs,
         )
         self.save_to_sent = email_settings.save_to_sent
         self.sent_folder_name = email_settings.sent_folder_name
@@ -1086,7 +1191,8 @@ class ClassicEmailHandler(EmailHandler):
             await imap._client_task
             await imap.wait_hello_from_server()
 
-            await imap.login(client.email_server.user_name, client.email_server.password)
+            await _imap_authenticate(imap, client.email_server, client.auth_type, client.email_address,
+                                     client.oauth2_provider, client.oauth2_client_id, client.oauth2_tenant_id, client.oauth2_client_secret)
             await _send_imap_id(imap)
 
             if select_mailbox:
@@ -1218,6 +1324,12 @@ class ClassicEmailHandler(EmailHandler):
                     msg,
                     self.email_settings.incoming,
                     self.sent_folder_name,
+                    auth_type=self.email_settings.auth_type,
+                    email_address=self.email_settings.email_address,
+                    oauth2_provider=self.email_settings.oauth2_provider,
+                    oauth2_client_id=self.email_settings.oauth2_client_id,
+                    oauth2_tenant_id=self.email_settings.oauth2_tenant_id,
+                    oauth2_client_secret=self.email_settings.oauth2_client_secret,
                 )
             except Exception as e:
                 logger.error(f"Failed to save email to Sent folder: {e}", exc_info=True)
@@ -1383,7 +1495,8 @@ class ClassicEmailHandler(EmailHandler):
         try:
             await imap._client_task
             await imap.wait_hello_from_server()
-            await imap.login(client.email_server.user_name, client.email_server.password)
+            await _imap_authenticate(imap, client.email_server, client.auth_type, client.email_address,
+                                     client.oauth2_provider, client.oauth2_client_id, client.oauth2_tenant_id, client.oauth2_client_secret)
             await _send_imap_id(imap)
             await imap.select(_quote_mailbox(mailbox))
 

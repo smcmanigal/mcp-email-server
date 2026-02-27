@@ -213,6 +213,12 @@ class TestClassicEmailHandlerSaveToSent:
                     mock_msg,
                     email_settings_with_save_to_sent.incoming,
                     "INBOX.Sent",
+                    auth_type=email_settings_with_save_to_sent.auth_type,
+                    email_address=email_settings_with_save_to_sent.email_address,
+                    oauth2_provider=email_settings_with_save_to_sent.oauth2_provider,
+                    oauth2_client_id=email_settings_with_save_to_sent.oauth2_client_id,
+                    oauth2_tenant_id=email_settings_with_save_to_sent.oauth2_tenant_id,
+                    oauth2_client_secret=email_settings_with_save_to_sent.oauth2_client_secret,
                 )
 
     @pytest.mark.asyncio

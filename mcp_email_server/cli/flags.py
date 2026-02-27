@@ -5,7 +5,7 @@ from typing import Annotated
 
 import typer
 
-from mcp_email_server.cli.formatting import console, print_error, print_json, print_success
+from mcp_email_server.cli.formatting import print_error, print_json, print_success
 from mcp_email_server.emails.dispatcher import dispatch_handler
 
 flags_app = typer.Typer(help="Flag operations")
