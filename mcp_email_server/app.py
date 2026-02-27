@@ -1,3 +1,5 @@
+import asyncio
+import time
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
@@ -21,6 +23,7 @@ from mcp_email_server.emails.models import (
 mcp = FastMCP("email")
 
 _pending_oauth2_flows: dict = {}
+_OAUTH2_FLOW_EXPIRY_SECONDS = 30 * 60  # 30 minutes
 
 
 @mcp.resource("email://{account_name}")
@@ -390,6 +393,12 @@ async def initiate_oauth2_setup(
     if settings.get_account(account_name):
         raise ValueError(f"Account '{account_name}' already exists.")
 
+    # Clean up expired flows
+    now = time.time()
+    expired = [k for k, v in _pending_oauth2_flows.items() if now - v.get("created_at", 0) > _OAUTH2_FLOW_EXPIRY_SECONDS]
+    for k in expired:
+        del _pending_oauth2_flows[k]
+
     from mcp_email_server.oauth2 import get_token_manager
 
     manager = get_token_manager(
@@ -410,6 +419,7 @@ async def initiate_oauth2_setup(
         "client_id": client_id,
         "tenant_id": tenant_id,
         "client_secret": client_secret,
+        "created_at": time.time(),
     }
 
     return {
@@ -429,10 +439,16 @@ async def complete_oauth2_setup(
         raise ValueError(f"No pending OAuth2 flow for '{account_name}'. Call initiate_oauth2_setup first.")
 
     pending = _pending_oauth2_flows[account_name]
+
+    # Check if the flow has expired
+    if time.time() - pending.get("created_at", 0) > _OAUTH2_FLOW_EXPIRY_SECONDS:
+        del _pending_oauth2_flows[account_name]
+        raise ValueError(f"OAuth2 flow for '{account_name}' has expired. Please call initiate_oauth2_setup again.")
+
     manager = pending["manager"]
 
     try:
-        manager.complete_device_code_flow(pending["flow"])
+        await asyncio.to_thread(manager.complete_device_code_flow, pending["flow"])
     except RuntimeError as e:
         del _pending_oauth2_flows[account_name]
         raise ValueError(f"OAuth2 authentication failed: {e}") from e
@@ -440,15 +456,10 @@ async def complete_oauth2_setup(
     provider = pending["provider"]
     email_address = pending["email_address"]
 
-    # Set provider defaults
-    if provider == "microsoft":
-        imap_host, imap_port, imap_ssl = "outlook.office365.com", 993, True
-        smtp_host, smtp_port, smtp_ssl, smtp_start_ssl = "smtp.office365.com", 587, False, True
-    else:  # google
-        imap_host, imap_port, imap_ssl = "imap.gmail.com", 993, True
-        smtp_host, smtp_port, smtp_ssl, smtp_start_ssl = "smtp.gmail.com", 587, False, True
-
     from mcp_email_server.config import EmailServer, store_settings
+    from mcp_email_server.oauth2 import PROVIDER_DEFAULTS
+
+    defaults = PROVIDER_DEFAULTS[provider]
 
     email_settings = EmailSettings(
         account_name=account_name,
@@ -456,16 +467,16 @@ async def complete_oauth2_setup(
         email_address=email_address,
         incoming=EmailServer(
             user_name=email_address,
-            host=imap_host,
-            port=imap_port,
-            use_ssl=imap_ssl,
+            host=defaults["imap_host"],
+            port=defaults["imap_port"],
+            use_ssl=defaults["imap_ssl"],
         ),
         outgoing=EmailServer(
             user_name=email_address,
-            host=smtp_host,
-            port=smtp_port,
-            use_ssl=smtp_ssl,
-            start_ssl=smtp_start_ssl,
+            host=defaults["smtp_host"],
+            port=defaults["smtp_port"],
+            use_ssl=defaults["smtp_ssl"],
+            start_ssl=defaults["smtp_start_ssl"],
         ),
         auth_type="oauth2",
         oauth2_provider=provider,

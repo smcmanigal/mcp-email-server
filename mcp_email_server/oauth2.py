@@ -10,6 +10,27 @@ from mcp_email_server.log import logger
 
 DEFAULT_CONFIG_DIR = Path(os.getenv("MCP_EMAIL_SERVER_CONFIG_PATH", "~/.config/zerolib/mcp_email_server/config.toml")).expanduser().resolve().parent
 
+PROVIDER_DEFAULTS: dict[str, dict[str, str | int | bool]] = {
+    "microsoft": {
+        "imap_host": "outlook.office365.com",
+        "imap_port": 993,
+        "imap_ssl": True,
+        "smtp_host": "smtp.office365.com",
+        "smtp_port": 587,
+        "smtp_ssl": False,
+        "smtp_start_ssl": True,
+    },
+    "google": {
+        "imap_host": "imap.gmail.com",
+        "imap_port": 993,
+        "imap_ssl": True,
+        "smtp_host": "smtp.gmail.com",
+        "smtp_port": 587,
+        "smtp_ssl": False,
+        "smtp_start_ssl": True,
+    },
+}
+
 
 class OAuth2TokenManager(abc.ABC):
     """Base class for OAuth2 token managers."""
@@ -54,7 +75,6 @@ class MSALTokenManager(OAuth2TokenManager):
     DEFAULT_SCOPES: ClassVar[list[str]] = [
         "https://outlook.office365.com/IMAP.AccessAsUser.All",
         "https://outlook.office365.com/SMTP.Send",
-        "offline_access",
     ]
 
     def __init__(

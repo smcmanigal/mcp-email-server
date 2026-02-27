@@ -129,10 +129,10 @@ async def _imap_authenticate(
             client_secret=oauth2_client_secret,
         )
         access_token = manager.get_access_token(email_address)
-        auth_string = _build_xoauth2_string(email_address, access_token)
-        auth_bytes = base64.b64encode(auth_string.encode()).decode()
-        # Use IMAP AUTHENTICATE command with XOAUTH2 mechanism
-        response = await imap.authenticate("XOAUTH2", lambda _: auth_bytes)
+        # aioimaplib.xoauth2(user, token) builds the SASL string internally.
+        # Despite the outer type hint saying bytes, the protocol implementation
+        # expects token as str (used in f-string + passed as scrub to send()).
+        response = await imap.xoauth2(email_address, access_token)
         if hasattr(response, "result") and response.result != "OK":
             raise RuntimeError(f"IMAP XOAUTH2 authentication failed: {response}")
     else:
@@ -161,9 +161,9 @@ async def _smtp_authenticate(
         )
         access_token = manager.get_access_token(email_address)
         auth_string = _build_xoauth2_string(email_address, access_token)
-        auth_bytes = base64.b64encode(auth_string.encode()).decode()
-        # Send AUTH XOAUTH2 command manually
-        await smtp.execute_command(b"AUTH", b"XOAUTH2", auth_bytes.encode())
+        # Base64-encode the SASL string; execute_command expects bytes args
+        auth_b64 = base64.b64encode(auth_string.encode())
+        await smtp.execute_command(b"AUTH", b"XOAUTH2", auth_b64)
     else:
         await smtp.login(email_server.user_name, email_server.password)
 
@@ -517,7 +517,11 @@ class EmailClient:
             )
             logger.info(f"Count: Search criteria: {search_criteria}")
             # Search for messages and count them - use UID SEARCH for consistency
-            _, messages = await imap.uid_search(*search_criteria)
+            # Use charset=None to avoid CHARSET utf-8 which M365 rejects
+            result, messages = await imap.uid_search(*search_criteria, charset=None)
+            if result != "OK":
+                logger.error(f"SEARCH failed: {result} {messages}")
+                return 0
             return len(messages[0].split())
         finally:
             # Ensure we logout properly
@@ -566,9 +570,13 @@ class EmailClient:
             logger.info(f"Get metadata: Search criteria: {search_criteria}")
 
             # Search for messages - use UID SEARCH for better compatibility
-            _, messages = await imap.uid_search(*search_criteria)
+            # Use charset=None to avoid CHARSET utf-8 which M365 rejects
+            result, messages = await imap.uid_search(*search_criteria, charset=None)
 
-            # Handle empty or None responses
+            # Handle errors or empty responses
+            if result != "OK":
+                logger.error(f"SEARCH failed: {result} {messages}")
+                return
             if not messages or not messages[0]:
                 logger.warning("No messages returned from search")
                 return
@@ -1348,9 +1356,11 @@ class ClassicEmailHandler(EmailHandler):
                 if isinstance(folder, bytes):
                     folder_str = folder.decode("utf-8")
                     # Parse IMAP LIST response: (\Flags) "delimiter" "folder name"
-                    match = re.match(r'\(([^)]*)\)\s+"([^"]+)"\s+"([^"]+)"', folder_str)
+                    # Folder name may be quoted ("Sent Items") or unquoted (INBOX)
+                    match = re.match(r'\(([^)]*)\)\s+"([^"]+)"\s+(?:"([^"]+)"|(\S+))', folder_str)
                     if match:
-                        flags, delimiter, name = match.groups()
+                        flags, delimiter = match.group(1), match.group(2)
+                        name = match.group(3) or match.group(4)
                         folder_info.append({
                             "name": name,
                             "delimiter": delimiter,

@@ -36,7 +36,7 @@ class TestImapAuthenticate:
         await _imap_authenticate(imap, server, auth_type="password")
 
         imap.login.assert_awaited_once_with("user", "pass123")
-        imap.authenticate.assert_not_awaited()
+        imap.xoauth2.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_password_auth_default(self):
@@ -50,11 +50,11 @@ class TestImapAuthenticate:
 
     @pytest.mark.asyncio
     async def test_oauth2_auth(self):
-        """Test OAuth2 auth calls imap.authenticate with XOAUTH2."""
+        """Test OAuth2 auth calls imap.xoauth2."""
         imap = AsyncMock()
         mock_response = MagicMock()
         mock_response.result = "OK"
-        imap.authenticate.return_value = mock_response
+        imap.xoauth2.return_value = mock_response
 
         server = EmailServer(user_name="user@example.com", host="outlook.office365.com", port=993)
 
@@ -73,17 +73,7 @@ class TestImapAuthenticate:
             )
 
         imap.login.assert_not_awaited()
-        imap.authenticate.assert_awaited_once()
-
-        # Verify XOAUTH2 mechanism
-        call_args = imap.authenticate.call_args
-        assert call_args[0][0] == "XOAUTH2"
-
-        # Verify the auth string callback produces correct base64
-        auth_callback = call_args[0][1]
-        auth_bytes = auth_callback(None)
-        decoded = base64.b64decode(auth_bytes).decode()
-        assert decoded == "user=user@example.com\x01auth=Bearer oauth2_token_abc\x01\x01"
+        imap.xoauth2.assert_awaited_once_with("user@example.com", "oauth2_token_abc")
 
         # Verify token manager was created with correct params
         mock_manager.get_access_token.assert_called_once_with("user@example.com")
@@ -94,7 +84,7 @@ class TestImapAuthenticate:
         imap = AsyncMock()
         mock_response = MagicMock()
         mock_response.result = "NO"
-        imap.authenticate.return_value = mock_response
+        imap.xoauth2.return_value = mock_response
 
         server = EmailServer(user_name="user@example.com", host="outlook.office365.com", port=993)
 

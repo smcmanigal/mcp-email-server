@@ -152,17 +152,11 @@ def add_oauth2_account() -> None:
     elif provider == "google":
         client_secret = typer.prompt("OAuth2 Client Secret", hide_input=True)
 
-    # Provider defaults
-    if provider == "microsoft":
-        imap_host, imap_port, imap_ssl = "outlook.office365.com", 993, True
-        smtp_host, smtp_port, smtp_ssl, smtp_start_ssl = "smtp.office365.com", 587, False, True
-    else:  # google
-        imap_host, imap_port, imap_ssl = "imap.gmail.com", 993, True
-        smtp_host, smtp_port, smtp_ssl, smtp_start_ssl = "smtp.gmail.com", 587, False, True
-
     console.print(f"\n[bold]Starting OAuth2 device code flow for {provider}...[/bold]")
 
-    from mcp_email_server.oauth2 import get_token_manager
+    from mcp_email_server.oauth2 import PROVIDER_DEFAULTS, get_token_manager
+
+    defaults = PROVIDER_DEFAULTS[provider]
 
     manager = get_token_manager(provider=provider, client_id=client_id, tenant_id=tenant_id or "common", client_secret=client_secret)
 
@@ -182,8 +176,8 @@ def add_oauth2_account() -> None:
         print_error(f"OAuth2 authentication failed: {e}")
         raise typer.Exit(1) from e
 
-    # For Microsoft, the flow result may contain the email
-    if result.get("email") and not email_address:
+    # If the flow result contains the authenticated email, prefer it
+    if result.get("email"):
         email_address = result["email"]
 
     email_settings = EmailSettings(
@@ -192,16 +186,16 @@ def add_oauth2_account() -> None:
         email_address=email_address,
         incoming=EmailServer(
             user_name=email_address,
-            host=imap_host,
-            port=imap_port,
-            use_ssl=imap_ssl,
+            host=defaults["imap_host"],
+            port=defaults["imap_port"],
+            use_ssl=defaults["imap_ssl"],
         ),
         outgoing=EmailServer(
             user_name=email_address,
-            host=smtp_host,
-            port=smtp_port,
-            use_ssl=smtp_ssl,
-            start_ssl=smtp_start_ssl,
+            host=defaults["smtp_host"],
+            port=defaults["smtp_port"],
+            use_ssl=defaults["smtp_ssl"],
+            start_ssl=defaults["smtp_start_ssl"],
         ),
         auth_type="oauth2",
         oauth2_provider=provider,

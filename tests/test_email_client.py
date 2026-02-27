@@ -199,7 +199,7 @@ class TestEmailClient:
         mock_imap.wait_hello_from_server = AsyncMock()
         mock_imap.login = AsyncMock()
         mock_imap.select = AsyncMock()
-        mock_imap.uid_search = AsyncMock(return_value=(None, [b"1 2 3"]))
+        mock_imap.uid_search = AsyncMock(return_value=("OK", [b"1 2 3"]))
         mock_imap.logout = AsyncMock()
 
         # Mock at the helper level - test behavior, not implementation
@@ -268,8 +268,8 @@ class TestEmailClient:
         mock_imap.wait_hello_from_server = AsyncMock()
         mock_imap.login = AsyncMock()
         mock_imap.select = AsyncMock()
-        mock_imap.search = AsyncMock(return_value=(None, [b"1 2 3 4 5"]))
-        mock_imap.uid_search = AsyncMock(return_value=(None, [b"1 2 3 4 5"]))
+        mock_imap.search = AsyncMock(return_value=("OK", [b"1 2 3 4 5"]))
+        mock_imap.uid_search = AsyncMock(return_value=("OK", [b"1 2 3 4 5"]))
         mock_imap.logout = AsyncMock()
 
         # Mock IMAP class
@@ -283,7 +283,7 @@ class TestEmailClient:
                 email_client.email_server.user_name, email_client.email_server.password
             )
             mock_imap.select.assert_called_once_with('"INBOX"')
-            mock_imap.uid_search.assert_called_once_with("ALL")
+            mock_imap.uid_search.assert_called_once_with("ALL", charset=None)
             mock_imap.logout.assert_called_once()
 
     @pytest.mark.asyncio
