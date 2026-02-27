@@ -374,7 +374,7 @@ async def save_email_to_file(
 
 
 @mcp.tool(
-    description="Initiate OAuth2 setup for a new email account. Returns a verification URL and code for the user to authenticate. After the user authenticates, call complete_oauth2_setup to finish."
+    description="Initiate OAuth2 setup for a new email account. Returns a verification URL and code for the user to authenticate. After the user authenticates, call complete_oauth2_setup to finish. For Google, this performs the full auth flow (opens browser) and returns completion status directly — no need to call complete_oauth2_setup."
 )
 async def initiate_oauth2_setup(
     account_name: Annotated[str, Field(description="Name for the new account.")],
@@ -408,29 +408,96 @@ async def initiate_oauth2_setup(
         client_secret=client_secret,
     )
 
-    flow = manager.initiate_device_code_flow()
+    if manager.uses_device_code_flow:
+        # Microsoft: two-step device code flow
+        flow = manager.initiate_device_code_flow()
 
-    _pending_oauth2_flows[account_name] = {
-        "flow": flow,
-        "manager": manager,
-        "email_address": email_address,
-        "full_name": full_name,
-        "provider": provider,
-        "client_id": client_id,
-        "tenant_id": tenant_id,
-        "client_secret": client_secret,
-        "created_at": time.time(),
-    }
+        _pending_oauth2_flows[account_name] = {
+            "flow": flow,
+            "manager": manager,
+            "email_address": email_address,
+            "full_name": full_name,
+            "provider": provider,
+            "client_id": client_id,
+            "tenant_id": tenant_id,
+            "client_secret": client_secret,
+            "created_at": time.time(),
+        }
 
-    return {
-        "verification_uri": flow.get("verification_uri", flow.get("verification_url", "")),
-        "user_code": flow["user_code"],
-        "message": flow.get("message", f"Go to {flow.get('verification_uri', '')} and enter code {flow['user_code']}"),
-    }
+        return {
+            "verification_uri": flow.get("verification_uri", flow.get("verification_url", "")),
+            "user_code": flow["user_code"],
+            "message": flow.get("message", f"Go to {flow.get('verification_uri', '')} and enter code {flow['user_code']}"),
+        }
+    else:
+        # Google: single-step browser redirect flow
+        try:
+            await asyncio.to_thread(manager.run_auth_flow, email=email_address)
+        except RuntimeError as e:
+            raise ValueError(f"OAuth2 authentication failed: {e}") from e
+
+        _save_oauth2_account(
+            account_name=account_name,
+            full_name=full_name,
+            email_address=email_address,
+            provider=provider,
+            client_id=client_id,
+            tenant_id=tenant_id,
+            client_secret=client_secret,
+        )
+
+        return {
+            "message": f"Successfully set up OAuth2 account '{account_name}' with {provider}.",
+            "complete": True,
+        }
+
+
+def _save_oauth2_account(
+    account_name: str,
+    full_name: str,
+    email_address: str,
+    provider: str,
+    client_id: str,
+    tenant_id: str | None,
+    client_secret: str | None,
+) -> None:
+    """Save an OAuth2-authenticated account to settings."""
+    from mcp_email_server.config import EmailServer, store_settings
+    from mcp_email_server.oauth2 import PROVIDER_DEFAULTS
+
+    defaults = PROVIDER_DEFAULTS[provider]
+
+    email_settings = EmailSettings(
+        account_name=account_name,
+        full_name=full_name,
+        email_address=email_address,
+        incoming=EmailServer(
+            user_name=email_address,
+            host=defaults["imap_host"],
+            port=defaults["imap_port"],
+            use_ssl=defaults["imap_ssl"],
+        ),
+        outgoing=EmailServer(
+            user_name=email_address,
+            host=defaults["smtp_host"],
+            port=defaults["smtp_port"],
+            use_ssl=defaults["smtp_ssl"],
+            start_ssl=defaults["smtp_start_ssl"],
+        ),
+        auth_type="oauth2",
+        oauth2_provider=provider,
+        oauth2_client_id=client_id,
+        oauth2_tenant_id=tenant_id,
+        oauth2_client_secret=client_secret,
+    )
+
+    settings = get_settings()
+    settings.add_email(email_settings)
+    store_settings(settings)
 
 
 @mcp.tool(
-    description="Complete OAuth2 setup after the user has authenticated via the device code flow. Call initiate_oauth2_setup first."
+    description="Complete OAuth2 setup after the user has authenticated via the device code flow. Call initiate_oauth2_setup first. Not needed for Google (which completes in a single step)."
 )
 async def complete_oauth2_setup(
     account_name: Annotated[str, Field(description="Account name from initiate_oauth2_setup.")],
@@ -456,38 +523,15 @@ async def complete_oauth2_setup(
     provider = pending["provider"]
     email_address = pending["email_address"]
 
-    from mcp_email_server.config import EmailServer, store_settings
-    from mcp_email_server.oauth2 import PROVIDER_DEFAULTS
-
-    defaults = PROVIDER_DEFAULTS[provider]
-
-    email_settings = EmailSettings(
+    _save_oauth2_account(
         account_name=account_name,
         full_name=pending["full_name"],
         email_address=email_address,
-        incoming=EmailServer(
-            user_name=email_address,
-            host=defaults["imap_host"],
-            port=defaults["imap_port"],
-            use_ssl=defaults["imap_ssl"],
-        ),
-        outgoing=EmailServer(
-            user_name=email_address,
-            host=defaults["smtp_host"],
-            port=defaults["smtp_port"],
-            use_ssl=defaults["smtp_ssl"],
-            start_ssl=defaults["smtp_start_ssl"],
-        ),
-        auth_type="oauth2",
-        oauth2_provider=provider,
-        oauth2_client_id=pending["client_id"],
-        oauth2_tenant_id=pending["tenant_id"],
-        oauth2_client_secret=pending["client_secret"],
+        provider=provider,
+        client_id=pending["client_id"],
+        tenant_id=pending["tenant_id"],
+        client_secret=pending["client_secret"],
     )
-
-    settings = get_settings()
-    settings.add_email(email_settings)
-    store_settings(settings)
 
     del _pending_oauth2_flows[account_name]
 

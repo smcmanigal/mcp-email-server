@@ -152,7 +152,7 @@ def add_oauth2_account() -> None:
     elif provider == "google":
         client_secret = typer.prompt("OAuth2 Client Secret", hide_input=True)
 
-    console.print(f"\n[bold]Starting OAuth2 device code flow for {provider}...[/bold]")
+    console.print(f"\n[bold]Starting OAuth2 authentication for {provider}...[/bold]")
 
     from mcp_email_server.oauth2 import PROVIDER_DEFAULTS, get_token_manager
 
@@ -160,21 +160,32 @@ def add_oauth2_account() -> None:
 
     manager = get_token_manager(provider=provider, client_id=client_id, tenant_id=tenant_id or "common", client_secret=client_secret)
 
-    try:
-        flow = manager.initiate_device_code_flow()
-    except RuntimeError as e:
-        print_error(f"Failed to start OAuth2 flow: {e}")
-        raise typer.Exit(1) from e
+    if manager.uses_device_code_flow:
+        # Device code flow (Microsoft): show code, wait for user
+        try:
+            flow = manager.initiate_device_code_flow()
+        except RuntimeError as e:
+            print_error(f"Failed to start OAuth2 flow: {e}")
+            raise typer.Exit(1) from e
 
-    console.print(f"\nTo sign in, open: [bold blue]{flow.get('verification_uri', flow.get('verification_url', ''))}")
-    console.print(f"Enter code: [bold green]{flow['user_code']}[/bold green]")
-    console.print("\nWaiting for authentication...")
+        console.print(f"\nTo sign in, open: [bold blue]{flow.get('verification_uri', flow.get('verification_url', ''))}")
+        console.print(f"Enter code: [bold green]{flow['user_code']}[/bold green]")
+        console.print("\nWaiting for authentication...")
 
-    try:
-        result = manager.complete_device_code_flow(flow)
-    except RuntimeError as e:
-        print_error(f"OAuth2 authentication failed: {e}")
-        raise typer.Exit(1) from e
+        try:
+            result = manager.complete_device_code_flow(flow)
+        except RuntimeError as e:
+            print_error(f"OAuth2 authentication failed: {e}")
+            raise typer.Exit(1) from e
+    else:
+        # Browser redirect flow (Google): user copies URL to browser
+        console.print("\nOpen the URL below in your browser to sign in...")
+
+        try:
+            result = manager.run_auth_flow(email=email_address)
+        except RuntimeError as e:
+            print_error(f"OAuth2 authentication failed: {e}")
+            raise typer.Exit(1) from e
 
     # If the flow result contains the authenticated email, prefer it
     if result.get("email"):

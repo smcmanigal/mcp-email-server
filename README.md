@@ -242,12 +242,38 @@ After installation, `mcp-email-server` is available as a global command.
 # List configured accounts
 mcp-email-server accounts list
 
-# Add a new account interactively
+# Add a new account interactively (password auth)
 mcp-email-server accounts add
+
+# Add an OAuth2 account (Microsoft 365 or Google)
+mcp-email-server accounts add-oauth2
 
 # Remove an account
 mcp-email-server accounts remove "my-account"
 ```
+
+### OAuth2 Setup (Microsoft 365 / Google)
+
+OAuth2 is required for Microsoft 365 (which has disabled basic auth) and recommended for Gmail.
+
+#### Microsoft 365
+
+1. Go to [Azure Entra](https://entra.microsoft.com/) → App registrations → New registration
+2. Name your app, set "Supported account types" to your tenant preference
+3. Under **API permissions**, add: `IMAP.AccessAsUser.All` and `SMTP.Send` (Microsoft Graph)
+4. Under **Authentication** → Advanced settings, set **"Allow public client flows"** to **Yes**
+5. Copy the **Application (client) ID** and **Directory (tenant) ID**
+6. Run `mcp-email-server accounts add-oauth2`, select `microsoft`, and enter the IDs
+
+#### Google
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services
+2. Enable the **Gmail API**
+3. Configure the **OAuth consent screen**: add `https://mail.google.com/` scope and your email as a test user
+4. Create **OAuth credentials** → Application type: **Desktop app**
+5. Copy the **Client ID** and **Client Secret**
+6. Run `mcp-email-server accounts add-oauth2`, select `google`, and enter the credentials
+7. A URL will be displayed — open it in your browser to authorize
 
 ### Email Operations
 

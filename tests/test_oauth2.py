@@ -288,6 +288,43 @@ class TestGoogleTokenManager:
             assert token == "new_token"
             mock_creds.refresh.assert_called_once_with(mock_request_cls.return_value)
 
+    def test_uses_device_code_flow_is_false(self, tmp_path):
+        """Test that Google uses browser redirect, not device code flow."""
+        manager = GoogleTokenManager(client_id="cid", client_secret="csec", cache_path=tmp_path / "cache.json")
+        assert manager.uses_device_code_flow is False
+
+    def test_initiate_device_code_flow_raises(self, tmp_path):
+        """Test that device code flow raises RuntimeError for Google."""
+        manager = GoogleTokenManager(client_id="cid", client_secret="csec", cache_path=tmp_path / "cache.json")
+        with pytest.raises(RuntimeError, match="does not support device code flow"):
+            manager.initiate_device_code_flow()
+
+    def test_run_auth_flow_success(self, tmp_path):
+        """Test successful browser-based auth flow."""
+        cache_path = tmp_path / "google_cache.json"
+
+        with patch("google_auth_oauthlib.flow.InstalledAppFlow.from_client_config") as mock_from_config:
+            mock_flow = MagicMock()
+            mock_creds = MagicMock()
+            mock_creds.token = "new_access_token"
+            mock_creds.refresh_token = "new_refresh_token"
+            mock_creds.client_id = "cid"
+            mock_creds.client_secret = "csec"
+            mock_flow.run_local_server.return_value = mock_creds
+            mock_from_config.return_value = mock_flow
+
+            manager = GoogleTokenManager(client_id="cid", client_secret="csec", cache_path=cache_path)
+            result = manager.run_auth_flow(email="user@gmail.com")
+
+            assert result["email"] == "user@gmail.com"
+            assert result["token_type"] == "Bearer"
+            mock_flow.run_local_server.assert_called_once_with(port=0, open_browser=False)
+
+            # Verify credentials were saved
+            assert cache_path.exists()
+            saved = json.loads(cache_path.read_text())
+            assert "user@gmail.com" in saved
+
     def test_remove_account_success(self, tmp_path):
         """Test successful account removal."""
         cache_path = tmp_path / "google_cache.json"

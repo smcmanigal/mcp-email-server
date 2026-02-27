@@ -47,6 +47,7 @@ class OAuth2TokenManager(abc.ABC):
         """Start the device code authorization flow.
 
         Returns a dict with at least 'verification_uri' and 'user_code'.
+        For providers that don't support device code flow, raises RuntimeError.
         """
 
     @abc.abstractmethod
@@ -56,9 +57,25 @@ class OAuth2TokenManager(abc.ABC):
         Returns account info on success, raises RuntimeError on failure.
         """
 
+    def run_auth_flow(self, email: str) -> dict:
+        """Run an interactive browser-based auth flow (authorization code with localhost redirect).
+
+        Default implementation falls back to device code flow.
+        Override for providers that need browser-based auth (e.g., Google).
+
+        Returns account info on success, raises RuntimeError on failure.
+        """
+        flow = self.initiate_device_code_flow()
+        return self.complete_device_code_flow(flow)
+
     @abc.abstractmethod
     def remove_account(self, email: str) -> bool:
         """Clear cached tokens for the given email. Returns True if tokens were removed."""
+
+    @property
+    def uses_device_code_flow(self) -> bool:
+        """Whether this provider uses device code flow (True) or browser redirect flow (False)."""
+        return True
 
 
 def _ensure_file_permissions(path: Path) -> None:
@@ -230,100 +247,44 @@ class GoogleTokenManager(OAuth2TokenManager):
         raise RuntimeError(f"Failed to acquire token for {email}")
 
     def initiate_device_code_flow(self) -> dict:
-        import requests
-
-        response = requests.post(
-            "https://oauth2.googleapis.com/device/code",
-            data={
-                "client_id": self.client_id,
-                "scope": " ".join(self.scopes),
-            },
-            timeout=30,
+        raise RuntimeError(
+            "Google does not support device code flow for the https://mail.google.com/ scope. "
+            "Use run_auth_flow() instead, which opens a browser for authorization."
         )
 
-        if response.status_code != 200:
-            raise RuntimeError(f"Failed to initiate device code flow: {response.text}")
-
-        data = response.json()
-        return {
-            "device_code": data["device_code"],
-            "user_code": data["user_code"],
-            "verification_uri": data.get("verification_url", data.get("verification_uri", "")),
-            "expires_in": data.get("expires_in", 1800),
-            "interval": data.get("interval", 5),
-        }
-
     def complete_device_code_flow(self, flow: dict) -> dict:
-        import time
+        raise RuntimeError(
+            "Google does not support device code flow. Use run_auth_flow() instead."
+        )
 
-        import requests
+    def run_auth_flow(self, email: str) -> dict:
+        """Run authorization code flow with localhost redirect. Opens a browser window."""
+        from google_auth_oauthlib.flow import InstalledAppFlow
 
-        device_code = flow["device_code"]
-        interval = flow.get("interval", 5)
-        expires_in = flow.get("expires_in", 1800)
-        deadline = time.time() + expires_in
-
-        while time.time() < deadline:
-            response = requests.post(
-                "https://oauth2.googleapis.com/token",
-                data={
+        flow = InstalledAppFlow.from_client_config(
+            {
+                "installed": {
                     "client_id": self.client_id,
                     "client_secret": self.client_secret,
-                    "device_code": device_code,
-                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-                },
-                timeout=30,
-            )
-
-            data = response.json()
-
-            if "access_token" in data:
-                from google.oauth2.credentials import Credentials
-
-                creds = Credentials(
-                    token=data["access_token"],
-                    refresh_token=data.get("refresh_token"),
-                    token_uri="https://oauth2.googleapis.com/token",  # noqa: S106
-                    client_id=self.client_id,
-                    client_secret=self.client_secret,
-                    scopes=self.scopes,
-                )
-
-                # Try to get email from userinfo
-                email = ""
-                try:
-                    userinfo_response = requests.get(
-                        "https://www.googleapis.com/oauth2/v3/userinfo",
-                        headers={"Authorization": f"Bearer {data['access_token']}"},
-                        timeout=10,
-                    )
-                    if userinfo_response.status_code == 200:
-                        email = userinfo_response.json().get("email", "")
-                except Exception as e:
-                    logger.debug(f"Failed to fetch userinfo: {e}")
-
-                if email:
-                    self._save_credentials(email, creds)
-
-                return {
-                    "email": email,
-                    "token_type": data.get("token_type", "Bearer"),
-                    "access_token": data["access_token"],
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
                 }
+            },
+            scopes=self.scopes,
+        )
 
-            error = data.get("error", "")
-            if error == "authorization_pending":
-                time.sleep(interval)
-                continue
-            elif error == "slow_down":
-                interval += 5
-                time.sleep(interval)
-                continue
-            else:
-                error_desc = data.get("error_description", error)
-                raise RuntimeError(f"Device code flow failed: {error_desc}")
+        creds = flow.run_local_server(port=0, open_browser=False)
 
-        raise RuntimeError("Device code flow timed out")
+        self._save_credentials(email, creds)
+
+        return {
+            "email": email,
+            "token_type": "Bearer",
+        }
+
+    @property
+    def uses_device_code_flow(self) -> bool:
+        return False
 
     def remove_account(self, email: str) -> bool:
         if not self.cache_path.exists():

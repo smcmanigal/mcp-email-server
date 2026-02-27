@@ -48,12 +48,15 @@ The project is both an **MCP server** and a **CLI tool** sharing the same core l
 - `get_settings()` is a module-level singleton; call `get_settings(reload=True)` to force a reload.
 
 ### OAuth2 / XOAUTH2 authentication
-- `mcp_email_server/oauth2.py` — Token managers for Microsoft 365 (MSAL) and Google. Abstract base `OAuth2TokenManager` with concrete `MSALTokenManager` and `GoogleTokenManager`. Factory: `get_token_manager(provider, client_id, ...)`.
+- `mcp_email_server/oauth2.py` — Token managers for Microsoft 365 (MSAL) and Google. Abstract base `OAuth2TokenManager` with concrete `MSALTokenManager` and `GoogleTokenManager`. Factory: `get_token_manager(provider, client_id, ...)`. The `uses_device_code_flow` property distinguishes the two auth flow types.
 - **Config fields** on `EmailSettings`: `auth_type` (`"password"` or `"oauth2"`), `oauth2_provider` (`"microsoft"` or `"google"`), `oauth2_client_id`, `oauth2_tenant_id`, `oauth2_client_secret`.
 - **Auth helpers** in `classic.py`: `_imap_authenticate()` and `_smtp_authenticate()` dispatch between `imap.login()` / `smtp.login()` (password) and XOAUTH2 SASL (OAuth2). All 10 login call sites use these helpers.
 - **Token cache**: `~/.config/zerolib/mcp_email_server/oauth2_token_cache.json` (MSAL/M365), `google_token_cache.json` (Google). File permissions `0600`.
-- **CLI**: `mcp-email-server accounts add-oauth2` — interactive device code flow setup.
-- **MCP tools**: `initiate_oauth2_setup` / `complete_oauth2_setup` — two-step device code flow for AI-assisted setup.
+- **Auth flows** differ by provider:
+  - **Microsoft**: Two-step device code flow (`initiate_device_code_flow` → user enters code → `complete_device_code_flow`).
+  - **Google**: Single-step browser redirect flow (`run_auth_flow` using `InstalledAppFlow.run_local_server` with `open_browser=False`). Google's device code flow does not support the `https://mail.google.com/` scope.
+- **CLI**: `mcp-email-server accounts add-oauth2` — handles both flows automatically based on provider.
+- **MCP tools**: `initiate_oauth2_setup` / `complete_oauth2_setup` — Microsoft uses both steps; Google completes fully in `initiate_oauth2_setup` (no need to call `complete_oauth2_setup`).
 - **Cleanup**: `Settings.delete_email()` automatically removes cached OAuth2 tokens.
 
 ### Key design notes
