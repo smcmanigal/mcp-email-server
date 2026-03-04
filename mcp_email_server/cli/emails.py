@@ -167,6 +167,37 @@ def move_emails(
         raise typer.Exit(1)
 
 
+@emails_app.command("download-attachment")
+def download_attachment(
+    email_id: Annotated[str, typer.Argument(help="Email ID containing the attachment")],
+    attachment_name: Annotated[str, typer.Argument(help="Attachment filename to download")],
+    save_path: Annotated[str, typer.Argument(help="Path to save the attachment")],
+    account: Annotated[str, typer.Option("--account", "-a", help="Email account name")],
+    mailbox: Annotated[str, typer.Option(help="Mailbox to search")] = "INBOX",
+    json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
+) -> None:
+    """Download an email attachment to a file."""
+    from mcp_email_server.config import get_settings
+
+    try:
+        settings = get_settings()
+        if not settings.enable_attachment_download:
+            print_error("Attachment download is disabled. Set 'enable_attachment_download=true' in config.toml.")
+            raise typer.Exit(1)
+
+        handler = dispatch_handler(account)
+        result = asyncio.run(handler.download_attachment(email_id, attachment_name, save_path, mailbox))
+        if json_output:
+            print_json(result)
+        else:
+            print_success(f"Downloaded '{result.attachment_name}' ({result.size} bytes) to {result.saved_path}")
+    except typer.Exit:
+        raise
+    except Exception as e:
+        print_error(str(e))
+        raise typer.Exit(1)
+
+
 @emails_app.command("save")
 def save_email(
     email_id: Annotated[str, typer.Argument(help="Email ID to save")],

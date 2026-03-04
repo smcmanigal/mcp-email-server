@@ -268,11 +268,10 @@ class EmailClient:
                 content_type = part.get_content_type()
                 content_disposition = str(part.get("Content-Disposition", ""))
 
-                # Handle attachments
-                if "attachment" in content_disposition:
-                    filename = part.get_filename()
-                    if filename:
-                        attachments.append(filename)
+                # Handle attachments (explicit attachments and inline parts with filenames)
+                filename = part.get_filename()
+                if filename and ("attachment" in content_disposition or "inline" in content_disposition):
+                    attachments.append(filename)
                 # Handle text parts - prefer text/plain
                 elif content_type == "text/plain":
                     body_part = part.get_payload(decode=True)
@@ -751,13 +750,11 @@ class EmailClient:
 
             if email_message.is_multipart():
                 for part in email_message.walk():
-                    content_disposition = str(part.get("Content-Disposition", ""))
-                    if "attachment" in content_disposition:
-                        filename = part.get_filename()
-                        if filename == attachment_name:
-                            attachment_data = part.get_payload(decode=True)
-                            mime_type = part.get_content_type()
-                            break
+                    filename = part.get_filename()
+                    if filename and filename == attachment_name:
+                        attachment_data = part.get_payload(decode=True)
+                        mime_type = part.get_content_type()
+                        break
 
             if attachment_data is None:
                 msg = f"Attachment '{attachment_name}' not found in email {email_id}"
