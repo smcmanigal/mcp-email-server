@@ -497,6 +497,93 @@ def _save_oauth2_account(
 
 
 @mcp.tool(
+    description="Re-authenticate an existing OAuth2 account by running the auth flow again. Use when tokens have expired or been revoked. For Microsoft, returns a verification URL/code (call complete_oauth2_reauth after user authenticates). For Google, completes in one call."
+)
+async def reauth_oauth2_account(
+    account_name: Annotated[str, Field(description="Name of the existing OAuth2 account to re-authenticate.")],
+) -> dict:
+    settings = get_settings()
+    account = settings.get_account(account_name)
+
+    if not account:
+        raise ValueError(f"Account '{account_name}' not found.")
+
+    if not isinstance(account, EmailSettings) or account.auth_type != "oauth2":
+        raise ValueError(f"Account '{account_name}' is not an OAuth2 account.")
+
+    # Clean up expired flows
+    now = time.time()
+    expired = [k for k, v in _pending_oauth2_flows.items() if now - v.get("created_at", 0) > _OAUTH2_FLOW_EXPIRY_SECONDS]
+    for k in expired:
+        del _pending_oauth2_flows[k]
+
+    from mcp_email_server.oauth2 import get_token_manager
+
+    manager = get_token_manager(
+        provider=account.oauth2_provider,
+        client_id=account.oauth2_client_id,
+        tenant_id=account.oauth2_tenant_id or "common",
+        client_secret=account.oauth2_client_secret,
+    )
+
+    if manager.uses_device_code_flow:
+        flow = manager.initiate_device_code_flow()
+
+        reauth_key = f"reauth:{account_name}"
+        _pending_oauth2_flows[reauth_key] = {
+            "flow": flow,
+            "manager": manager,
+            "email_address": account.email_address,
+            "created_at": time.time(),
+        }
+
+        return {
+            "verification_uri": flow.get("verification_uri", flow.get("verification_url", "")),
+            "user_code": flow["user_code"],
+            "message": flow.get("message", f"Go to {flow.get('verification_uri', '')} and enter code {flow['user_code']}"),
+        }
+    else:
+        try:
+            await asyncio.to_thread(manager.run_auth_flow, email=account.email_address)
+        except RuntimeError as e:
+            raise ValueError(f"OAuth2 re-authentication failed: {e}") from e
+
+        return {
+            "message": f"Successfully re-authenticated account '{account_name}'.",
+            "complete": True,
+        }
+
+
+@mcp.tool(
+    description="Complete OAuth2 re-authentication after the user has authenticated via the device code flow. Call reauth_oauth2_account first. Not needed for Google."
+)
+async def complete_oauth2_reauth(
+    account_name: Annotated[str, Field(description="Account name from reauth_oauth2_account.")],
+) -> str:
+    reauth_key = f"reauth:{account_name}"
+    if reauth_key not in _pending_oauth2_flows:
+        raise ValueError(f"No pending re-auth flow for '{account_name}'. Call reauth_oauth2_account first.")
+
+    pending = _pending_oauth2_flows[reauth_key]
+
+    if time.time() - pending.get("created_at", 0) > _OAUTH2_FLOW_EXPIRY_SECONDS:
+        del _pending_oauth2_flows[reauth_key]
+        raise ValueError(f"Re-auth flow for '{account_name}' has expired. Please call reauth_oauth2_account again.")
+
+    manager = pending["manager"]
+
+    try:
+        await asyncio.to_thread(manager.complete_device_code_flow, pending["flow"])
+    except RuntimeError as e:
+        del _pending_oauth2_flows[reauth_key]
+        raise ValueError(f"OAuth2 re-authentication failed: {e}") from e
+
+    del _pending_oauth2_flows[reauth_key]
+
+    return f"Successfully re-authenticated account '{account_name}'."
+
+
+@mcp.tool(
     description="Complete OAuth2 setup after the user has authenticated via the device code flow. Call initiate_oauth2_setup first. Not needed for Google (which completes in a single step)."
 )
 async def complete_oauth2_setup(

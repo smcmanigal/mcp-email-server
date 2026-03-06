@@ -128,6 +128,69 @@ def remove_account(
     print_success(f"Account '{name}' removed successfully.")
 
 
+@accounts_app.command("reauth")
+def reauth_account(
+    account_name: Annotated[str, typer.Option("--account", "-a", help="Account name to re-authenticate")],
+) -> None:
+    """Re-authenticate an existing OAuth2 account (refresh tokens)."""
+    settings = get_settings()
+    account = settings.get_account(account_name)
+
+    if not account:
+        print_error(f"Account '{account_name}' not found.")
+        raise typer.Exit(1)
+
+    if not isinstance(account, EmailSettings) or account.auth_type != "oauth2":
+        print_error(f"Account '{account_name}' is not an OAuth2 account.")
+        raise typer.Exit(1)
+
+    provider = account.oauth2_provider
+    console.print(f"\n[bold]Re-authenticating OAuth2 account '{account_name}' ({provider})...[/bold]")
+
+    from mcp_email_server.oauth2 import get_token_manager
+
+    manager = get_token_manager(
+        provider=provider,
+        client_id=account.oauth2_client_id,
+        tenant_id=account.oauth2_tenant_id or "common",
+        client_secret=account.oauth2_client_secret,
+    )
+
+    if manager.uses_device_code_flow:
+        try:
+            flow = manager.initiate_device_code_flow()
+        except RuntimeError as e:
+            print_error(f"Failed to start OAuth2 flow: {e}")
+            raise typer.Exit(1) from e
+
+        console.print(f"\nTo sign in, open: [bold blue]{flow.get('verification_uri', flow.get('verification_url', ''))}")
+        console.print(f"Enter code: [bold green]{flow['user_code']}[/bold green]")
+        console.print("\nWaiting for authentication...")
+
+        try:
+            manager.complete_device_code_flow(flow)
+        except RuntimeError as e:
+            print_error(f"OAuth2 authentication failed: {e}")
+            raise typer.Exit(1) from e
+    else:
+        console.print("\nOpen the URL below in your browser to sign in...")
+
+        try:
+            manager.run_auth_flow(email=account.email_address)
+        except RuntimeError as e:
+            print_error(f"OAuth2 authentication failed: {e}")
+            raise typer.Exit(1) from e
+
+    # Verify the new tokens work
+    try:
+        manager.get_access_token(account.email_address)
+    except RuntimeError as e:
+        print_error(f"Token verification failed: {e}")
+        raise typer.Exit(1) from e
+
+    print_success(f"Account '{account_name}' re-authenticated successfully.")
+
+
 @accounts_app.command("add-oauth2")
 def add_oauth2_account() -> None:
     """Add a new email account with OAuth2 authentication (Microsoft 365 or Google)."""
