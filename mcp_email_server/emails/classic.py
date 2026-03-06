@@ -89,8 +89,8 @@ async def _send_imap_id(imap: aioimaplib.IMAP4 | aioimaplib.IMAP4_SSL) -> None:
         logger.warning(f"IMAP ID command failed: {e!s}")
 
 
-def _create_smtp_ssl_context(verify_ssl: bool) -> ssl.SSLContext | None:
-    """Create SSL context for SMTP connections.
+def _create_ssl_context(verify_ssl: bool) -> ssl.SSLContext | None:
+    """Create SSL context for SMTP/IMAP connections.
 
     Returns None for default verification, or permissive context
     for self-signed certificates when verify_ssl=False.
@@ -101,6 +101,10 @@ def _create_smtp_ssl_context(verify_ssl: bool) -> ssl.SSLContext | None:
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     return ctx
+
+
+# Backwards-compatible alias
+_create_smtp_ssl_context = _create_ssl_context
 
 
 def _build_xoauth2_string(user: str, access_token: str) -> str:
@@ -195,9 +199,16 @@ class EmailClient:
         self.smtp_start_tls = self.email_server.start_ssl
         self.smtp_verify_ssl = self.email_server.verify_ssl
 
+    def _imap_connect(self) -> aioimaplib.IMAP4_SSL | aioimaplib.IMAP4:
+        """Create a new IMAP connection with the configured SSL context."""
+        if self.email_server.use_ssl:
+            imap_ssl_context = _create_ssl_context(self.email_server.verify_ssl)
+            return self.imap_class(self.email_server.host, self.email_server.port, ssl_context=imap_ssl_context)
+        return self.imap_class(self.email_server.host, self.email_server.port)
+
     def _get_smtp_ssl_context(self) -> ssl.SSLContext | None:
         """Get SSL context for SMTP connections based on verify_ssl setting."""
-        return _create_smtp_ssl_context(self.smtp_verify_ssl)
+        return _create_ssl_context(self.smtp_verify_ssl)
 
     @staticmethod
     def _parse_recipients(email_message) -> list[str]:
@@ -493,7 +504,7 @@ class EmailClient:
         flagged: bool | None = None,
         answered: bool | None = None,
     ) -> int:
-        imap = self.imap_class(self.email_server.host, self.email_server.port)
+        imap = self._imap_connect()
         try:
             # Wait for the connection to be established
             await imap._client_task
@@ -544,7 +555,7 @@ class EmailClient:
         flagged: bool | None = None,
         answered: bool | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
-        imap = self.imap_class(self.email_server.host, self.email_server.port)
+        imap = self._imap_connect()
         try:
             # Wait for the connection to be established
             await imap._client_task
@@ -663,7 +674,7 @@ class EmailClient:
         return None
 
     async def get_email_body_by_id(self, email_id: str, mailbox: str = "INBOX", truncate_body: int | None = None) -> dict[str, Any] | None:
-        imap = self.imap_class(self.email_server.host, self.email_server.port)
+        imap = self._imap_connect()
         try:
             # Wait for the connection to be established
             await imap._client_task
@@ -719,7 +730,7 @@ class EmailClient:
         Returns:
             A dictionary with download result information.
         """
-        imap = self.imap_class(self.email_server.host, self.email_server.port)
+        imap = self._imap_connect()
         try:
             await imap._client_task
             await imap.wait_hello_from_server()
@@ -960,8 +971,11 @@ class EmailClient:
         Returns:
             True if successfully saved, False otherwise
         """
-        imap_class = aioimaplib.IMAP4_SSL if incoming_server.use_ssl else aioimaplib.IMAP4
-        imap = imap_class(incoming_server.host, incoming_server.port)
+        if incoming_server.use_ssl:
+            imap_ssl_context = _create_ssl_context(incoming_server.verify_ssl)
+            imap = aioimaplib.IMAP4_SSL(incoming_server.host, incoming_server.port, ssl_context=imap_ssl_context)
+        else:
+            imap = aioimaplib.IMAP4(incoming_server.host, incoming_server.port)
 
         # Common Sent folder names across different providers
         sent_folder_candidates = [
@@ -1036,7 +1050,7 @@ class EmailClient:
 
     async def delete_emails(self, email_ids: list[str], mailbox: str = "INBOX") -> tuple[list[str], list[str]]:
         """Delete emails by their UIDs. Returns (deleted_ids, failed_ids)."""
-        imap = self.imap_class(self.email_server.host, self.email_server.port)
+        imap = self._imap_connect()
         deleted_ids = []
         failed_ids = []
 
@@ -1090,7 +1104,7 @@ class EmailClient:
         moved = []
         failed = []
 
-        imap = self.imap_class(self.email_server.host, self.email_server.port)
+        imap = self._imap_connect()
         try:
             await imap._client_task
             await imap.wait_hello_from_server()
@@ -1191,7 +1205,7 @@ class ClassicEmailHandler(EmailHandler):
     async def imap_connection(self, select_mailbox: str = "INBOX"):
         """Reusable IMAP connection context manager for the incoming server."""
         client = self.incoming_client
-        imap = client.imap_class(client.email_server.host, client.email_server.port)
+        imap = client._imap_connect()
         try:
             await imap._client_task
             await imap.wait_hello_from_server()
@@ -1498,7 +1512,7 @@ class ClassicEmailHandler(EmailHandler):
             mailbox: The mailbox to search in (default: "INBOX").
         """
         client = self.incoming_client
-        imap = client.imap_class(client.email_server.host, client.email_server.port)
+        imap = client._imap_connect()
         try:
             await imap._client_task
             await imap.wait_hello_from_server()

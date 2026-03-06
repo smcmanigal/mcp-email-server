@@ -82,7 +82,7 @@ async def test_save_email_markdown_format(mock_handler, temp_dir):
     file_path = os.path.join(temp_dir, "email.md")
 
     mock_imap = _create_mock_imap()
-    mock_handler.incoming_client.imap_class = MagicMock(return_value=mock_imap)
+    mock_handler.incoming_client._imap_connect = MagicMock(return_value=mock_imap)
     mock_handler.incoming_client._fetch_email_with_formats = AsyncMock(
         return_value=[b"1 FETCH (BODY[] {100}", bytearray(raw_email)]
     )
@@ -119,7 +119,7 @@ async def test_save_email_html_format(mock_handler, temp_dir):
     file_path = os.path.join(temp_dir, "email.html")
 
     mock_imap = _create_mock_imap()
-    mock_handler.incoming_client.imap_class = MagicMock(return_value=mock_imap)
+    mock_handler.incoming_client._imap_connect = MagicMock(return_value=mock_imap)
     mock_handler.incoming_client._fetch_email_with_formats = AsyncMock(
         return_value=[b"1 FETCH (BODY[] {100}", bytearray(raw_email)]
     )
@@ -150,7 +150,7 @@ async def test_save_email_without_headers(mock_handler, temp_dir):
     file_path = os.path.join(temp_dir, "email_no_headers.txt")
 
     mock_imap = _create_mock_imap()
-    mock_handler.incoming_client.imap_class = MagicMock(return_value=mock_imap)
+    mock_handler.incoming_client._imap_connect = MagicMock(return_value=mock_imap)
     mock_handler.incoming_client._fetch_email_with_formats = AsyncMock(
         return_value=[b"1 FETCH (BODY[] {100}", bytearray(raw_email)]
     )
@@ -183,7 +183,7 @@ async def test_save_email_with_headers(mock_handler, temp_dir):
     file_path = os.path.join(temp_dir, "email_headers.txt")
 
     mock_imap = _create_mock_imap()
-    mock_handler.incoming_client.imap_class = MagicMock(return_value=mock_imap)
+    mock_handler.incoming_client._imap_connect = MagicMock(return_value=mock_imap)
     mock_handler.incoming_client._fetch_email_with_formats = AsyncMock(
         return_value=[b"1 FETCH (BODY[] {100}", bytearray(raw_email)]
     )
@@ -216,7 +216,7 @@ async def test_save_email_plain_text_markdown(mock_handler, temp_dir):
     file_path = os.path.join(temp_dir, "plain.md")
 
     mock_imap = _create_mock_imap()
-    mock_handler.incoming_client.imap_class = MagicMock(return_value=mock_imap)
+    mock_handler.incoming_client._imap_connect = MagicMock(return_value=mock_imap)
     mock_handler.incoming_client._fetch_email_with_formats = AsyncMock(
         return_value=[b"1 FETCH (BODY[] {100}", bytearray(raw_email)]
     )
