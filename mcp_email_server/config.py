@@ -328,6 +328,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     @classmethod
+    def _resolve_db_location(cls, obj: Settings) -> Settings:
+        """Resolve relative db_location paths against the config directory."""
+        db_path = Path(obj.db_location)
+        if not db_path.is_absolute():
+            obj.db_location = (CONFIG_PATH.parent / db_path).resolve().as_posix()
+        return obj
+
+    @model_validator(mode="after")
+    @classmethod
     def check_unique_account_names(cls, obj: Settings) -> Settings:
         account_names = set()
         for email in obj.emails:

@@ -594,30 +594,25 @@ class EmailClient:
             email_ids = messages[0].split()
             logger.info(f"Found {len(email_ids)} email IDs")
 
-            # Phase 1: Batch fetch INTERNALDATE for sorting (parallel chunks)
-            fetch_dates_start = time.perf_counter()
-            uid_dates = await self._batch_fetch_dates(imap, email_ids)
-            fetch_dates_elapsed = time.perf_counter() - fetch_dates_start
-
-            # Sort by INTERNALDATE
-            sorted_uids = sorted(uid_dates.items(), key=lambda x: x[1], reverse=(order == "desc"))
+            # Sort by UID (monotonically increasing, approximates chronological order)
+            sorted_uids = sorted(email_ids, key=lambda uid: int(uid), reverse=(order == "desc"))
 
             # Paginate
             start = (page - 1) * page_size
-            page_uids = [uid for uid, _ in sorted_uids[start : start + page_size]]
+            page_uids = [uid.decode() if isinstance(uid, bytes) else uid for uid in sorted_uids[start : start + page_size]]
 
             if not page_uids:
-                logger.info(f"Phase 1 (dates): {len(uid_dates)} UIDs in {fetch_dates_elapsed:.2f}s, page {page} empty")
+                logger.info(f"Page {page} empty (total {len(email_ids)} UIDs)")
                 return
 
-            # Phase 2: Batch fetch headers for requested page only
+            # Batch fetch headers for requested page only
             fetch_headers_start = time.perf_counter()
             metadata_by_uid = await self._batch_fetch_headers(imap, page_uids)
             fetch_headers_elapsed = time.perf_counter() - fetch_headers_start
 
             logger.info(
-                f"Fetched page {page}: {fetch_dates_elapsed:.2f}s dates ({len(uid_dates)} UIDs), "
-                f"{fetch_headers_elapsed:.2f}s headers ({len(page_uids)} UIDs)"
+                f"Fetched page {page}: {len(page_uids)} of {len(email_ids)} UIDs, "
+                f"headers in {fetch_headers_elapsed:.2f}s"
             )
 
             # Yield in sorted order

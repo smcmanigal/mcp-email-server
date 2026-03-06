@@ -5,9 +5,11 @@ import pytest
 from pydantic import ValidationError
 
 from mcp_email_server.config import (
+    CONFIG_PATH,
     EmailServer,
     EmailSettings,
     ProviderSettings,
+    Settings,
     get_settings,
     store_settings,
 )
@@ -64,6 +66,29 @@ def test_config():
                 ),
             )
         )
+
+
+class TestDbLocation:
+    def test_relative_db_location_resolved_to_config_dir(self):
+        """Relative db_location should resolve against the config directory, not CWD."""
+        # Write a TOML config with a relative db_location (Settings only reads from TOML)
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CONFIG_PATH.write_text('db_location = "my.db"\n')
+        settings = get_settings(reload=True)
+        expected = (CONFIG_PATH.parent / "my.db").resolve().as_posix()
+        assert settings.db_location == expected
+
+    def test_absolute_db_location_unchanged(self):
+        """Absolute db_location should remain unchanged."""
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CONFIG_PATH.write_text('db_location = "/var/data/test.db"\n')
+        settings = get_settings(reload=True)
+        assert settings.db_location == "/var/data/test.db"
+
+    def test_default_db_location_is_absolute(self):
+        """Default db_location should already be absolute."""
+        settings = Settings()
+        assert settings.db_location.startswith("/")
 
 
 class TestOAuth2Config:
