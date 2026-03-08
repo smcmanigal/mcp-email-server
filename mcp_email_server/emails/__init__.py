@@ -126,6 +126,28 @@ class EmailHandler(abc.ABC):
         """
 
     @abc.abstractmethod
+    async def apply_filter_rule(
+        self,
+        senders: list[str],
+        target_folder: str,
+        source_mailbox: str = "INBOX",
+        since: datetime | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, list[str]]:
+        """Apply a filter rule: search for emails from multiple senders and move them.
+
+        Args:
+            senders: List of sender substrings to match (IMAP FROM search).
+            target_folder: Folder to move matched emails to.
+            source_mailbox: Source mailbox to search (default: "INBOX").
+            since: Only match emails since this datetime.
+            dry_run: If True, return matches without moving.
+
+        Returns:
+            Dict with 'matched', 'moved', and 'failed' lists of email IDs.
+        """
+
+    @abc.abstractmethod
     async def download_attachment(
         self,
         email_id: str,

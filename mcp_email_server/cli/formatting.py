@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from rich.console import Console
@@ -82,4 +83,57 @@ def print_folders(folders: list[dict]) -> None:
         flags = ", ".join(folder.get("flags", [])) if isinstance(folder, dict) else ""
         table.add_row(name, flags)
 
+    console.print(table)
+
+
+def print_rules_table(rules_by_file: dict, rules_dir: Path) -> None:
+    """Print a table of filter rules grouped by file."""
+    if not rules_by_file:
+        console.print(f"[dim]No rules found. Add rules to: {rules_dir}[/dim]")
+        return
+    table = Table(title="Filter Rules", show_lines=True)
+    table.add_column("File", style="cyan", no_wrap=True)
+    table.add_column("Name", style="yellow")
+    table.add_column("Account", style="green")
+    table.add_column("Source", style="white")
+    table.add_column("Target", style="magenta")
+    table.add_column("Senders", style="white")
+    for file_name, rules in rules_by_file.items():
+        for rule in rules:
+            table.add_row(
+                file_name,
+                rule.name,
+                rule.account,
+                rule.source_mailbox,
+                rule.target_folder,
+                ", ".join(rule.senders),
+            )
+    console.print(table)
+
+
+def print_rules_results(results: list) -> None:
+    """Print a table of rule apply results."""
+    if not results:
+        console.print("[dim]No rules were applied.[/dim]")
+        return
+    table = Table(title="Rule Apply Results", show_lines=True)
+    table.add_column("Rule", style="cyan")
+    table.add_column("Account", style="green")
+    table.add_column("Source", style="white")
+    table.add_column("Target", style="magenta")
+    table.add_column("Matched", style="yellow", justify="right")
+    table.add_column("Moved", style="green", justify="right")
+    table.add_column("Failed", style="red", justify="right")
+    for r in results:
+        style = "dim" if r.matched == 0 else ""
+        table.add_row(
+            r.rule_name,
+            r.account,
+            r.source_mailbox,
+            r.target_folder,
+            str(r.matched),
+            str(r.moved),
+            str(r.failed),
+            style=style,
+        )
     console.print(table)

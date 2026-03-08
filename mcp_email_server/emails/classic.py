@@ -1096,9 +1096,6 @@ class EmailClient:
         create_if_missing: bool = True,
     ) -> dict[str, list[str]]:
         """Move emails to a target folder. Returns dict with 'moved' and 'failed' lists."""
-        moved = []
-        failed = []
-
         imap = self._imap_connect()
         try:
             await imap._client_task
@@ -1112,36 +1109,8 @@ class EmailClient:
                     return {"moved": [], "failed": email_ids}
 
             await imap.select(_quote_mailbox(source_mailbox))
-
-            for email_id in email_ids:
-                try:
-                    # Try MOVE command first (RFC 6851)
-                    try:
-                        response = await imap.uid("move", email_id, _quote_mailbox(target_folder))
-                        if response and response.result == "OK":
-                            logger.info(f"Moved email {email_id} to {target_folder} using MOVE")
-                            moved.append(email_id)
-                            continue
-                    except Exception as move_error:
-                        logger.debug(f"MOVE not supported, falling back to COPY+DELETE: {move_error}")
-
-                    # Fallback to COPY + DELETE
-                    copy_response = await imap.uid("copy", email_id, _quote_mailbox(target_folder))
-                    if copy_response and copy_response.result == "OK":
-                        await imap.uid("store", email_id, "+FLAGS", r"(\Deleted)")
-                        logger.info(f"Moved email {email_id} to {target_folder} using COPY+DELETE")
-                        moved.append(email_id)
-                    else:
-                        logger.error(f"Failed to copy email {email_id}: {copy_response}")
-                        failed.append(email_id)
-
-                except Exception as e:
-                    logger.error(f"Error moving email {email_id} to {target_folder}: {e}")
-                    failed.append(email_id)
-
-            # Expunge deleted messages after all moves
-            if moved:
-                await imap.expunge()
+            moved, failed = await self._move_uids(imap, email_ids, target_folder)
+            return {"moved": moved, "failed": failed}
 
         finally:
             try:
@@ -1149,7 +1118,85 @@ class EmailClient:
             except Exception as e:
                 logger.info(f"Error during logout: {e}")
 
-        return {"moved": moved, "failed": failed}
+    async def _search_senders(self, imap, senders: list[str], since: datetime | None) -> list[str]:
+        """Search for emails from multiple senders, returning deduplicated sorted UIDs."""
+        all_uids: set[str] = set()
+        for sender in senders:
+            search_criteria = self._build_search_criteria(from_address=sender, since=since)
+            result, messages = await imap.uid_search(*search_criteria, charset=None)
+            if result == "OK" and messages and messages[0]:
+                for uid in messages[0].split():
+                    all_uids.add(uid.decode() if isinstance(uid, bytes) else uid)
+        return sorted(all_uids, key=lambda uid: int(uid))
+
+    async def _move_uids(self, imap, email_ids: list[str], target_folder: str) -> tuple[list[str], list[str]]:
+        """Move a list of UIDs to target_folder. Returns (moved, failed)."""
+        moved = []
+        failed = []
+        for email_id in email_ids:
+            try:
+                # Try MOVE command first (RFC 6851)
+                try:
+                    response = await imap.uid("move", email_id, _quote_mailbox(target_folder))
+                    if response and response.result == "OK":
+                        logger.info(f"Moved email {email_id} to {target_folder} using MOVE")
+                        moved.append(email_id)
+                        continue
+                except Exception as move_error:
+                    logger.debug(f"MOVE not supported, falling back to COPY+DELETE: {move_error}")
+
+                # Fallback to COPY + DELETE
+                copy_response = await imap.uid("copy", email_id, _quote_mailbox(target_folder))
+                if copy_response and copy_response.result == "OK":
+                    await imap.uid("store", email_id, "+FLAGS", r"(\Deleted)")
+                    logger.info(f"Moved email {email_id} to {target_folder} using COPY+DELETE")
+                    moved.append(email_id)
+                else:
+                    logger.error(f"Failed to copy email {email_id}: {copy_response}")
+                    failed.append(email_id)
+            except Exception as e:
+                logger.error(f"Error moving email {email_id} to {target_folder}: {e}")
+                failed.append(email_id)
+
+        if moved:
+            await imap.expunge()
+        return moved, failed
+
+    async def apply_filter_rule(
+        self,
+        senders: list[str],
+        target_folder: str,
+        source_mailbox: str = "INBOX",
+        since: datetime | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, list[str]]:
+        """Search for emails from multiple senders and move them to a target folder."""
+        imap = self._imap_connect()
+        try:
+            await imap._client_task
+            await imap.wait_hello_from_server()
+            await _imap_authenticate(imap, self.email_server, self.auth_type, self.email_address,
+                                     self.oauth2_provider, self.oauth2_client_id, self.oauth2_tenant_id, self.oauth2_client_secret)
+            await _send_imap_id(imap)
+            await imap.select(_quote_mailbox(source_mailbox))
+
+            matched = await self._search_senders(imap, senders, since)
+
+            if dry_run or not matched:
+                return {"matched": matched, "moved": [], "failed": []}
+
+            if not await self.create_folder_if_needed(imap, target_folder):
+                logger.error(f"Failed to create folder: {target_folder}")
+                return {"matched": matched, "moved": [], "failed": matched}
+
+            moved, failed = await self._move_uids(imap, matched, target_folder)
+            return {"matched": matched, "moved": moved, "failed": failed}
+
+        finally:
+            try:
+                await imap.logout()
+            except Exception as e:
+                logger.info(f"Error during logout: {e}")
 
 
 def _normalize_flags(flags: list[str]) -> list[str]:
@@ -1387,6 +1434,17 @@ class ClassicEmailHandler(EmailHandler):
         return await self.incoming_client.move_emails_to_folder(
             email_ids, target_folder, source_mailbox, create_if_missing
         )
+
+    async def apply_filter_rule(
+        self,
+        senders: list[str],
+        target_folder: str,
+        source_mailbox: str = "INBOX",
+        since: datetime | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, list[str]]:
+        """Apply a filter rule using the incoming client."""
+        return await self.incoming_client.apply_filter_rule(senders, target_folder, source_mailbox, since, dry_run)
 
     async def download_attachment(
         self,

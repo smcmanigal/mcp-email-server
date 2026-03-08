@@ -1,8 +1,12 @@
+import logging
 import os
 
 # Default CLI log level to WARNING (MCP server commands keep INFO via their own env)
 if "MCP_EMAIL_SERVER_LOG_LEVEL" not in os.environ:
     os.environ["MCP_EMAIL_SERVER_LOG_LEVEL"] = "WARNING"
+
+# Suppress aioimaplib INFO chatter (untagged IMAP responses) in CLI
+logging.getLogger("aioimaplib").setLevel(logging.WARNING)
 
 import typer
 
@@ -11,6 +15,7 @@ from mcp_email_server.cli.accounts import accounts_app
 from mcp_email_server.cli.emails import emails_app
 from mcp_email_server.cli.flags import flags_app
 from mcp_email_server.cli.folders import folders_app
+from mcp_email_server.cli.rules import rules_app
 from mcp_email_server.config import delete_settings
 
 app = typer.Typer()
@@ -18,6 +23,7 @@ app.add_typer(accounts_app, name="accounts")
 app.add_typer(emails_app, name="emails")
 app.add_typer(folders_app, name="folders")
 app.add_typer(flags_app, name="flags")
+app.add_typer(rules_app, name="rules")
 
 
 @app.command()
