@@ -27,6 +27,15 @@ mcp-email-server accounts list
 mcp-email-server accounts add-oauth2          # interactive OAuth2 setup (M365/Google)
 mcp-email-server emails list -a "Account Name" --since "2026-01-01T00:00:00"
 mcp-email-server emails read -a "Account Name" <email_id>
+
+# Filter rules
+mcp-email-server rules list                        # show all rules
+mcp-email-server rules list --account "Account"    # filter by account
+mcp-email-server rules apply --dry-run             # preview matches without moving
+mcp-email-server rules apply                       # move matched emails
+mcp-email-server rules apply --json                # machine-readable output
+mcp-email-server rules add --file ads --name "Ads" --account "Account" --target-folder "Ads" --senders "a@x.com,b@y.com"
+mcp-email-server rules delete --file ads --name "Ads"
 ```
 
 ## Architecture
@@ -35,7 +44,7 @@ The project is both an **MCP server** and a **CLI tool** sharing the same core l
 
 ### Entry points
 - **MCP server**: `mcp_email_server/app.py` — defines all MCP tools using `FastMCP`. Each tool calls `dispatch_handler(account_name)` to get an `EmailHandler`, then delegates.
-- **CLI**: `mcp_email_server/cli/__init__.py` — Typer app that registers sub-apps (`accounts`, `emails`, `folders`, `flags`) and top-level commands (`stdio`, `sse`, `streamable-http`, `ui`, `reset`). The CLI sub-commands in `cli/emails.py`, etc. call the same underlying handler methods.
+- **CLI**: `mcp_email_server/cli/__init__.py` — Typer app that registers sub-apps (`accounts`, `emails`, `folders`, `flags`, `rules`) and top-level commands (`stdio`, `sse`, `streamable-http`, `ui`, `reset`). The CLI sub-commands in `cli/emails.py`, etc. call the same underlying handler methods.
 
 ### Handler abstraction
 - `mcp_email_server/emails/__init__.py` — abstract base class `EmailHandler` defining the contract for all email operations.
@@ -58,6 +67,17 @@ The project is both an **MCP server** and a **CLI tool** sharing the same core l
 - **CLI**: `mcp-email-server accounts add-oauth2` — handles both flows automatically based on provider.
 - **MCP tools**: `initiate_oauth2_setup` / `complete_oauth2_setup` — Microsoft uses both steps; Google completes fully in `initiate_oauth2_setup` (no need to call `complete_oauth2_setup`).
 - **Cleanup**: `Settings.delete_email()` automatically removes cached OAuth2 tokens.
+
+### Filter rules
+- `mcp_email_server/rules.py` — Pydantic models (`Rule`, `RuleFile`, `RuleApplyResult`), TOML file I/O, and `apply_rules()` orchestrator. CLI-only feature (no MCP tools).
+- `mcp_email_server/cli/rules.py` — Typer sub-app with `list`, `apply`, `add`, `delete` commands.
+- **Rule storage**: TOML files in `~/.config/zerolib/mcp_email_server/rules/` (one or more `*.toml` files, each containing `[[rules]]` entries).
+- **Rule format**: Each rule has `name`, `account`, `target_folder`, `senders` (list of sender substrings for IMAP FROM search), and optional `source_mailbox` (default: `"INBOX"`).
+- **Execution**: `apply_rules()` dispatches one handler per rule. `EmailClient.apply_filter_rule()` opens a **single IMAP connection** per rule, runs `uid_search` per sender, deduplicates UIDs, then batch-moves using MOVE (RFC 6851) with COPY+DELETE fallback.
+- **Shared helpers**: `EmailClient._search_senders()` (multi-sender search + dedup) and `_move_uids()` (MOVE/COPY+DELETE + expunge) are reused by both `apply_filter_rule` and `move_emails_to_folder`.
+- **Path safety**: `_validate_rule_path()` prevents path traversal in file names.
+- **`--dry-run`**: Returns matches without moving; no folder creation occurs.
+- **`--json`**: Machine-readable output for agent/script consumption (goes to stdout; log noise stays on stderr).
 
 ### Key design notes
 - Email IDs are IMAP UIDs (strings). Always obtain them from `list_emails_metadata` before calling content/delete/flag operations.
