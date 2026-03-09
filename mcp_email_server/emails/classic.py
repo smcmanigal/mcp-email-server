@@ -394,7 +394,7 @@ class EmailClient:
                 "attachments": [],
             }
         except Exception as e:
-            logger.error(f"Error parsing email headers: {e!s}")
+            logger.error(f"Error parsing email headers: {type(e).__name__}: {e!r}")
             return None
 
     async def _fetch_dates_chunk(
@@ -697,7 +697,7 @@ class EmailClient:
             try:
                 return self._parse_email_data(raw_email, email_id, truncate_body)
             except Exception as e:
-                logger.error(f"Error parsing email: {e!s}")
+                logger.error(f"Error parsing email: {type(e).__name__}: {e!r}")
                 return None
 
         finally:
@@ -834,7 +834,7 @@ class EmailClient:
                 attachment_part = self._create_attachment_part(path)
                 msg.attach(attachment_part)
             except Exception as e:
-                logger.error(f"Failed to attach file {file_path}: {e}")
+                logger.error(f"Failed to attach file {file_path}: {type(e).__name__}: {e!r}")
                 raise
 
         return msg
@@ -1035,7 +1035,7 @@ class EmailClient:
             return False
 
         except Exception as e:
-            logger.error(f"Error saving to Sent folder: {e}")
+            logger.error(f"Error saving to Sent folder: {type(e).__name__}: {e!r}")
             return False
         finally:
             try:
@@ -1062,7 +1062,7 @@ class EmailClient:
                     await imap.uid("store", email_id, "+FLAGS", r"(\Deleted)")
                     deleted_ids.append(email_id)
                 except Exception as e:
-                    logger.error(f"Failed to delete email {email_id}: {e}")
+                    logger.error(f"Failed to delete email {email_id}: {type(e).__name__}: {e!r}")
                     failed_ids.append(email_id)
 
             await imap.expunge()
@@ -1085,7 +1085,7 @@ class EmailClient:
             logger.info(f"Created folder: {folder_name}")
             return True
         except Exception as e:
-            logger.error(f"Error creating folder {folder_name}: {e}")
+            logger.error(f"Error creating folder {folder_name}: {type(e).__name__}: {e!r}")
             return False
 
     async def move_emails_to_folder(
@@ -1155,7 +1155,7 @@ class EmailClient:
                     logger.error(f"Failed to copy email {email_id}: {copy_response}")
                     failed.append(email_id)
             except Exception as e:
-                logger.error(f"Error moving email {email_id} to {target_folder}: {e}")
+                logger.error(f"Error moving email {email_id} to {target_folder}: {type(e).__name__}: {e!r}")
                 failed.append(email_id)
 
         if moved:
@@ -1352,7 +1352,7 @@ class ClassicEmailHandler(EmailHandler):
                 else:
                     failed_ids.append(email_id)
             except Exception as e:
-                logger.error(f"Failed to retrieve email {email_id}: {e}")
+                logger.error(f"Failed to retrieve email {email_id}: {type(e).__name__}: {e!r}")
                 failed_ids.append(email_id)
 
         return EmailContentBatchResponse(
@@ -1532,7 +1532,7 @@ class ClassicEmailHandler(EmailHandler):
                     )
 
         except Exception as e:
-            logger.error(f"Error in flag modification: {e}")
+            logger.error(f"Error in flag modification: {type(e).__name__}: {e!r}")
             return {str(eid): False for eid in email_ids}
 
     async def add_flags(self, email_ids: list[str], flags: list[str], silent: bool = False) -> dict[str, bool]:

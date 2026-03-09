@@ -173,7 +173,7 @@ async def apply_rules(
                     )
                 )
             except Exception as e:
-                logger.error(f"Failed to apply rule '{rule.name}' for account '{rule.account}': {e}")
+                logger.error(f"Failed to apply rule '{rule.name}' for account '{rule.account}': {type(e).__name__}: {e!r}")
                 results.append(
                     RuleApplyResult(
                         rule_name=rule.name,
