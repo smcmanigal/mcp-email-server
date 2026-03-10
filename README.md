@@ -308,21 +308,32 @@ mcp-email-server emails save -a "my-account" 12345 output.md
 
 ### Filter Rules
 
-TOML-based email filter rules that search for sender substrings and move matched emails to target folders (similar to Thunderbird filters).
+TOML-based email filter rules that match by sender or subject and move matched emails to target folders (similar to Thunderbird filters). Each rule specifies either `--senders` or `--subjects` (not both).
 
 ```bash
 # List all rules
 mcp-email-server rules list
 
-# Add a rule (senders are comma-separated substrings matched via IMAP FROM search)
+# Add a sender-based rule (comma-separated substrings matched via IMAP FROM search)
 mcp-email-server rules add --file ads --name "Retail Ads" --account "my-account" \
   --target-folder "Ads" --senders "email.nordstrom.com,smail.macys.com,deals@amazon.com"
+
+# Add a subject-based rule (comma-separated substrings matched via IMAP SUBJECT search)
+mcp-email-server rules add --file alerts --name "Daily Reports" --account "my-account" \
+  --target-folder "Reports" --subjects "Daily Balances,Weekly Summary"
+
+# Add a rule that marks emails as read before moving
+mcp-email-server rules add --file junk --name "Junk" --account "my-account" \
+  --target-folder "Junk" --senders "noreply@spammy.com" --mark-read
 
 # Preview matches without moving (dry run)
 mcp-email-server rules apply --dry-run
 
 # Apply rules — move matched emails
 mcp-email-server rules apply
+
+# Limit emails processed per rule
+mcp-email-server rules apply --limit 10
 
 # Filter by account or file
 mcp-email-server rules apply --account "my-account" --file ads
@@ -347,6 +358,13 @@ senders = [
     "email.nordstrom.com",
     "deals@amazon.com",
 ]
+
+[[rules]]
+name = "Daily Reports"
+account = "my-account"
+target_folder = "Reports"
+subjects = ["Daily Balances By Cassette Report"]
+mark_read = true
 ```
 
 ### Folder Operations
