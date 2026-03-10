@@ -30,10 +30,7 @@ def print_email_table(emails: list[dict], title: str = "Emails") -> None:
 
     for email in emails:
         date_str = email.get("date", "")
-        if hasattr(date_str, "strftime"):
-            date_str = date_str.strftime("%Y-%m-%d %H:%M")
-        else:
-            date_str = str(date_str)[:16]
+        date_str = date_str.strftime("%Y-%m-%d %H:%M") if hasattr(date_str, "strftime") else str(date_str)[:16]
         attachments = email.get("attachments", [])
         attach_str = str(len(attachments)) if attachments else ""
         table.add_row(

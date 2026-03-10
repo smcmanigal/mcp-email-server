@@ -36,7 +36,7 @@ def list_rules(
             print_rules_table(rules_by_file, RULES_DIR)
     except Exception as e:
         print_error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 @rules_app.command("apply")
@@ -65,7 +65,7 @@ def apply_rules_cmd(
             print_rules_results(results)
     except Exception as e:
         print_error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 @rules_app.command("add")
@@ -115,7 +115,7 @@ def add_rule_cmd(
         raise
     except Exception as e:
         print_error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 @rules_app.command("delete")
@@ -137,4 +137,4 @@ def delete_rule_cmd(
         raise
     except Exception as e:
         print_error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None

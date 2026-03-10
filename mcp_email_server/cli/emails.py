@@ -56,7 +56,7 @@ def list_emails(
             )
     except Exception as e:
         print_error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 @emails_app.command("read")
@@ -80,7 +80,7 @@ def read_emails(
                 print_error(f"Failed to retrieve: {', '.join(result.failed_ids)}")
     except Exception as e:
         print_error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 @emails_app.command("send")
@@ -121,7 +121,7 @@ def send_email(
         raise
     except Exception as e:
         print_error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 @emails_app.command("delete")
@@ -139,7 +139,7 @@ def delete_emails(
             print_error(f"Failed to delete: {', '.join(failed_ids)}")
     except Exception as e:
         print_error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 @emails_app.command("move")
@@ -164,7 +164,7 @@ def move_emails(
             print_error(f"Failed to move: {', '.join(result['failed'])}")
     except Exception as e:
         print_error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 @emails_app.command("download-attachment")
@@ -195,7 +195,7 @@ def download_attachment(
         raise
     except Exception as e:
         print_error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 @emails_app.command("save")
@@ -204,7 +204,7 @@ def save_email(
     file_path: Annotated[str, typer.Argument(help="File path to save to")],
     account: Annotated[str, typer.Option("--account", "-a", help="Email account name")],
     mailbox: Annotated[str, typer.Option(help="Mailbox to search")] = "INBOX",
-    format: Annotated[str, typer.Option("--format", "-f", help="Output format: markdown or html")] = "markdown",
+    output_format: Annotated[str, typer.Option("--format", "-f", help="Output format: markdown or html")] = "markdown",
     headers: Annotated[bool, typer.Option("--headers/--no-headers", help="Include email headers")] = True,
 ) -> None:
     """Save an email to a file."""
@@ -213,11 +213,11 @@ def save_email(
         result = asyncio.run(handler.save_email_to_file(
             email_id=email_id,
             file_path=file_path,
-            output_format=format,
+            output_format=output_format,
             include_headers=headers,
             mailbox=mailbox,
         ))
         print_success(f"Saved email {result.email_id} to {result.file_path} ({result.content_length} chars, {result.output_format})")
     except Exception as e:
         print_error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None

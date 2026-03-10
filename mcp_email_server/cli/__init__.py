@@ -8,15 +8,15 @@ if "MCP_EMAIL_SERVER_LOG_LEVEL" not in os.environ:
 # Suppress aioimaplib INFO chatter (untagged IMAP responses) in CLI
 logging.getLogger("aioimaplib").setLevel(logging.WARNING)
 
-import typer
+import typer  # noqa: E402
 
-from mcp_email_server.app import mcp
-from mcp_email_server.cli.accounts import accounts_app
-from mcp_email_server.cli.emails import emails_app
-from mcp_email_server.cli.flags import flags_app
-from mcp_email_server.cli.folders import folders_app
-from mcp_email_server.cli.rules import rules_app
-from mcp_email_server.config import delete_settings
+from mcp_email_server.app import mcp  # noqa: E402
+from mcp_email_server.cli.accounts import accounts_app  # noqa: E402
+from mcp_email_server.cli.emails import emails_app  # noqa: E402
+from mcp_email_server.cli.flags import flags_app  # noqa: E402
+from mcp_email_server.cli.folders import folders_app  # noqa: E402
+from mcp_email_server.cli.rules import rules_app  # noqa: E402
+from mcp_email_server.config import delete_settings  # noqa: E402
 
 app = typer.Typer()
 app.add_typer(accounts_app, name="accounts")
