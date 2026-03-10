@@ -128,18 +128,22 @@ class EmailHandler(abc.ABC):
     @abc.abstractmethod
     async def apply_filter_rule(
         self,
-        senders: list[str],
-        target_folder: str,
+        senders: list[str] | None = None,
+        subjects: list[str] | None = None,
+        target_folder: str = "",
         source_mailbox: str = "INBOX",
         since: datetime | None = None,
         dry_run: bool = False,
         limit: int | None = None,
         mark_read: bool = False,
     ) -> dict[str, list[str]]:
-        """Apply a filter rule: search for emails from multiple senders and move them.
+        """Apply a filter rule: search for emails matching criteria and move them.
+
+        Exactly one of senders or subjects must be provided.
 
         Args:
             senders: List of sender substrings to match (IMAP FROM search).
+            subjects: List of subject substrings to match (IMAP SUBJECT search).
             target_folder: Folder to move matched emails to.
             source_mailbox: Source mailbox to search (default: "INBOX").
             since: Only match emails since this datetime.

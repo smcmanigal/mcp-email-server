@@ -1119,25 +1119,25 @@ class EmailClient:
                 logger.info(f"Error during logout: {e}")
 
     @staticmethod
-    def _build_or_from_criteria(senders: list[str]) -> list[str]:
-        """Build a single IMAP OR tree for multiple FROM criteria.
+    def _build_or_criteria(field: str, values: list[str]) -> list[str]:
+        """Build a single IMAP OR tree for multiple field criteria.
 
         IMAP OR is prefix notation with exactly two operands:
-          1 sender:  FROM "a"
-          2 senders: OR FROM "a" FROM "b"
-          3 senders: OR FROM "a" OR FROM "b" FROM "c"
+          1 value:  FIELD "a"
+          2 values: OR FIELD "a" FIELD "b"
+          3 values: OR FIELD "a" OR FIELD "b" FIELD "c"
         """
-        parts = [["FROM", _quote_search_param(s)] for s in senders]
+        parts = [[field, _quote_search_param(v)] for v in values]
         result = parts[-1]
         for part in reversed(parts[:-1]):
             result = ["OR", *part, *result]
         return result
 
-    async def _search_senders(
-        self, imap, senders: list[str], since: datetime | None, chunk_size: int = 25
+    async def _search_by_field(
+        self, imap, field: str, values: list[str], since: datetime | None, chunk_size: int = 25
     ) -> list[str]:
-        """Search for emails from multiple senders using batched OR queries, returning sorted UIDs."""
-        if not senders:
+        """Search for emails matching field values using batched OR queries, returning sorted UIDs."""
+        if not values:
             return []
 
         date_criteria = []
@@ -1145,9 +1145,9 @@ class EmailClient:
             date_criteria = ["SINCE", since.strftime("%d-%b-%Y").upper()]
 
         all_uids: set[str] = set()
-        for i in range(0, len(senders), chunk_size):
-            chunk = senders[i : i + chunk_size]
-            or_criteria = self._build_or_from_criteria(chunk)
+        for i in range(0, len(values), chunk_size):
+            chunk = values[i : i + chunk_size]
+            or_criteria = self._build_or_criteria(field, chunk)
             search_criteria = date_criteria + or_criteria
             result, messages = await imap.uid_search(*search_criteria, charset=None)
             if result == "OK" and messages and messages[0]:
@@ -1244,10 +1244,12 @@ class EmailClient:
                 else:
                     logger.error(f"Failed to copy batch to {target_folder}: {copy_response}")
                     failed.extend(batch)
+                    failed.extend(email_ids[i + batch_size :])
                     break
             except Exception as e:
                 logger.error(f"Error moving batch to {target_folder}: {type(e).__name__}: {e!r}")
                 failed.extend(batch)
+                failed.extend(email_ids[i + batch_size :])
                 break
 
         if moved:
@@ -1256,15 +1258,25 @@ class EmailClient:
 
     async def apply_filter_rule(
         self,
-        senders: list[str],
-        target_folder: str,
+        senders: list[str] | None = None,
+        subjects: list[str] | None = None,
+        target_folder: str = "",
         source_mailbox: str = "INBOX",
         since: datetime | None = None,
         dry_run: bool = False,
         limit: int | None = None,
         mark_read: bool = False,
     ) -> dict[str, list[str]]:
-        """Search for emails from multiple senders and move them to a target folder."""
+        """Search for emails matching criteria and move them to a target folder."""
+        if limit is not None and limit < 1:
+            raise ValueError("limit must be a positive integer")
+        if senders:
+            field, values = "FROM", senders
+        elif subjects:
+            field, values = "SUBJECT", subjects
+        else:
+            raise ValueError("Either senders or subjects must be provided")
+
         imap = self._imap_connect()
         try:
             await imap._client_task
@@ -1274,7 +1286,7 @@ class EmailClient:
             await _send_imap_id(imap)
             await imap.select(_quote_mailbox(source_mailbox))
 
-            matched = await self._search_senders(imap, senders, since)
+            matched = await self._search_by_field(imap, field, values, since)
             to_process = matched
             if limit is not None and len(matched) > limit:
                 to_process = matched[:limit]
@@ -1534,8 +1546,9 @@ class ClassicEmailHandler(EmailHandler):
 
     async def apply_filter_rule(
         self,
-        senders: list[str],
-        target_folder: str,
+        senders: list[str] | None = None,
+        subjects: list[str] | None = None,
+        target_folder: str = "",
         source_mailbox: str = "INBOX",
         since: datetime | None = None,
         dry_run: bool = False,
@@ -1545,6 +1558,7 @@ class ClassicEmailHandler(EmailHandler):
         """Apply a filter rule using the incoming client."""
         return await self.incoming_client.apply_filter_rule(
             senders=senders,
+            subjects=subjects,
             target_folder=target_folder,
             source_mailbox=source_mailbox,
             since=since,

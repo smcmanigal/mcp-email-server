@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 import tomli_w
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, model_validator
 
 from mcp_email_server.config import CONFIG_PATH
 from mcp_email_server.log import logger
@@ -32,16 +32,20 @@ class Rule(BaseModel):
     name: str
     account: str
     target_folder: str
-    senders: list[str]
+    senders: list[str] = []
+    subjects: list[str] = []
     source_mailbox: str = "INBOX"
     mark_read: bool = False
 
-    @field_validator("senders")
-    @classmethod
-    def senders_must_not_be_empty(cls, v: list[str]) -> list[str]:
-        if not v:
-            raise ValueError("senders must not be empty")
-        return v
+    @model_validator(mode="after")
+    def exactly_one_criteria(self) -> Rule:
+        has_senders = bool(self.senders)
+        has_subjects = bool(self.subjects)
+        if has_senders and has_subjects:
+            raise ValueError("A rule must specify either senders or subjects, not both")
+        if not has_senders and not has_subjects:
+            raise ValueError("A rule must specify either senders or subjects")
+        return self
 
 
 class RuleFile(BaseModel):
@@ -156,7 +160,8 @@ async def apply_rules(
             try:
                 handler = dispatch_handler(rule.account)
                 response = await handler.apply_filter_rule(
-                    senders=rule.senders,
+                    senders=rule.senders or None,
+                    subjects=rule.subjects or None,
                     target_folder=rule.target_folder,
                     source_mailbox=rule.source_mailbox,
                     since=since,

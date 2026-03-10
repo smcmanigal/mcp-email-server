@@ -105,9 +105,18 @@ class TestRuleModel:
         rule = _sample_rule()
         assert rule.source_mailbox == "INBOX"
 
-    def test_empty_senders_raises(self):
-        with pytest.raises(ValidationError, match="senders must not be empty"):
-            Rule(name="bad", account="acct", target_folder="X", senders=[])
+    def test_empty_senders_and_subjects_raises(self):
+        with pytest.raises(ValidationError, match="must specify either senders or subjects"):
+            Rule(name="bad", account="acct", target_folder="X")
+
+    def test_both_senders_and_subjects_raises(self):
+        with pytest.raises(ValidationError, match="not both"):
+            Rule(name="bad", account="acct", target_folder="X", senders=["a@b.com"], subjects=["test"])
+
+    def test_subject_rule(self):
+        rule = Rule(name="subj", account="acct", target_folder="Alerts", subjects=["Alert", "Notification"])
+        assert rule.subjects == ["Alert", "Notification"]
+        assert rule.senders == []
 
 
 class TestRuleFile:
@@ -274,6 +283,7 @@ class TestApplyRules:
         mock_dispatch.assert_called_once_with("test_account")
         mock_handler.apply_filter_rule.assert_called_once_with(
             senders=["alice@example.com", "bob@example.com"],
+            subjects=None,
             target_folder="Newsletters",
             source_mailbox="INBOX",
             since=None,
@@ -304,6 +314,7 @@ class TestApplyRules:
 
         mock_handler.apply_filter_rule.assert_called_once_with(
             senders=rule.senders,
+            subjects=None,
             target_folder=rule.target_folder,
             source_mailbox="INBOX",
             since=None,
@@ -479,24 +490,30 @@ class TestApplyFilterRule:
         assert "01-JAN-2026" in all_args
 
 
-class TestBuildOrFromCriteria:
+class TestBuildOrCriteria:
     def test_single_sender(self):
         from mcp_email_server.emails.classic import EmailClient
 
-        result = EmailClient._build_or_from_criteria(["alice@example.com"])
+        result = EmailClient._build_or_criteria("FROM", ["alice@example.com"])
         assert result == ["FROM", '"alice@example.com"']
 
     def test_two_senders(self):
         from mcp_email_server.emails.classic import EmailClient
 
-        result = EmailClient._build_or_from_criteria(["a@x.com", "b@x.com"])
+        result = EmailClient._build_or_criteria("FROM", ["a@x.com", "b@x.com"])
         assert result == ["OR", "FROM", '"a@x.com"', "FROM", '"b@x.com"']
 
     def test_three_senders(self):
         from mcp_email_server.emails.classic import EmailClient
 
-        result = EmailClient._build_or_from_criteria(["a@x.com", "b@x.com", "c@x.com"])
+        result = EmailClient._build_or_criteria("FROM", ["a@x.com", "b@x.com", "c@x.com"])
         assert result == ["OR", "FROM", '"a@x.com"', "OR", "FROM", '"b@x.com"', "FROM", '"c@x.com"']
+
+    def test_subject_field(self):
+        from mcp_email_server.emails.classic import EmailClient
+
+        result = EmailClient._build_or_criteria("SUBJECT", ["Alert", "Notification"])
+        assert result == ["OR", "SUBJECT", '"Alert"', "SUBJECT", '"Notification"']
 
 
 class TestBuildUidSet:
@@ -526,7 +543,7 @@ class TestBuildUidSet:
         assert EmailClient._build_uid_set([]) == ""
 
 
-class TestSearchSendersChunking:
+class TestSearchByFieldChunking:
     @pytest.mark.asyncio
     async def test_chunking_deduplicates_across_chunks(self, email_client):
         """Two chunks with overlapping UIDs are deduplicated."""
@@ -537,8 +554,8 @@ class TestSearchSendersChunking:
             ("OK", [b"2 3"]),
         ]
 
-        result = await email_client._search_senders(
-            mock_imap, ["a@x.com", "b@x.com", "c@x.com"], since=None, chunk_size=2
+        result = await email_client._search_by_field(
+            mock_imap, "FROM", ["a@x.com", "b@x.com", "c@x.com"], since=None, chunk_size=2
         )
 
         assert result == ["1", "2", "3"]
@@ -554,8 +571,8 @@ class TestSearchSendersChunking:
             ("OK", [b"2"]),
         ]
 
-        await email_client._search_senders(
-            mock_imap, ["a@x.com", "b@x.com", "c@x.com"], since=None, chunk_size=2
+        await email_client._search_by_field(
+            mock_imap, "FROM", ["a@x.com", "b@x.com", "c@x.com"], since=None, chunk_size=2
         )
 
         # First call: 2 senders → OR query
@@ -565,6 +582,21 @@ class TestSearchSendersChunking:
         # Second call: 1 sender → no OR
         second_call_args = list(mock_imap.uid_search.call_args_list[1].args)
         assert "OR" not in second_call_args
+
+    @pytest.mark.asyncio
+    async def test_subject_search(self, email_client):
+        """SUBJECT field search works with the same chunking logic."""
+        mock_imap = _make_mock_imap()
+        mock_imap.uid_search.return_value = ("OK", [b"10 20"])
+
+        result = await email_client._search_by_field(
+            mock_imap, "SUBJECT", ["Alert", "Notification"], since=None
+        )
+
+        assert result == ["10", "20"]
+        call_args = list(mock_imap.uid_search.call_args.args)
+        assert "SUBJECT" in call_args
+        assert "OR" in call_args
 
 
 class TestBatchMoveUids:
@@ -618,8 +650,8 @@ class TestBatchMoveUids:
         )
 
         assert moved == ["1", "2"]
-        assert failed == ["3", "4"]
-        # Batch [5,6] was never attempted
+        assert failed == ["3", "4", "5", "6"]
+        # Batch [5,6] was never attempted but is included in failed
         assert batch_count == 2
 
     @pytest.mark.asyncio
@@ -682,6 +714,50 @@ class TestApplyFilterRuleLimit:
         assert result["failed"] == []
 
 
+class TestApplyFilterRuleNegativeLimit:
+    @pytest.mark.asyncio
+    async def test_negative_limit_raises(self, email_client):
+        with pytest.raises(ValueError, match="limit must be a positive integer"):
+            await email_client.apply_filter_rule(senders=["a@b.com"], target_folder="X", limit=-1)
+
+    @pytest.mark.asyncio
+    async def test_zero_limit_raises(self, email_client):
+        with pytest.raises(ValueError, match="limit must be a positive integer"):
+            await email_client.apply_filter_rule(senders=["a@b.com"], target_folder="X", limit=0)
+
+
+class TestApplyFilterRuleSubjects:
+    @pytest.mark.asyncio
+    async def test_apply_filter_rule_with_subjects(self, email_client):
+        """Subject-based rules use SUBJECT field in IMAP search."""
+        mock_imap = _make_mock_imap()
+        mock_imap.uid_search.return_value = ("OK", [b"50 51"])
+        mock_imap.list.return_value = ("OK", [b'(\\HasNoChildren) "/" "Alerts"'])
+        move_response = MagicMock()
+        move_response.result = "OK"
+        mock_imap.uid.return_value = move_response
+
+        email_client.imap_class = MagicMock(return_value=mock_imap)
+
+        result = await email_client.apply_filter_rule(
+            subjects=["Alert", "Notification"],
+            target_folder="Alerts",
+        )
+
+        assert result["matched"] == ["50", "51"]
+        assert result["moved"] == ["50", "51"]
+        assert result["failed"] == []
+        call_args = list(mock_imap.uid_search.call_args.args)
+        assert "SUBJECT" in call_args
+        assert "OR" in call_args
+
+    @pytest.mark.asyncio
+    async def test_apply_filter_rule_no_criteria_raises(self, email_client):
+        """Calling with neither senders nor subjects raises ValueError."""
+        with pytest.raises(ValueError, match="Either senders or subjects must be provided"):
+            await email_client.apply_filter_rule(target_folder="X")
+
+
 class TestClassicHandlerApplyFilterRule:
     @pytest.mark.asyncio
     async def test_handler_delegates_to_client(self, classic_handler):
@@ -700,6 +776,7 @@ class TestClassicHandlerApplyFilterRule:
         assert result == expected
         classic_handler.incoming_client.apply_filter_rule.assert_called_once_with(
             senders=["a@b.com"],
+            subjects=None,
             target_folder="Archive",
             source_mailbox="INBOX",
             since=since,

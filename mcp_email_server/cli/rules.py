@@ -45,7 +45,7 @@ def apply_rules_cmd(
     file: Annotated[str | None, typer.Option("--file", "-f", help="Filter by rule file name")] = None,
     since: Annotated[datetime | None, typer.Option(help="Only match emails since datetime")] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Show matches without moving")] = False,
-    limit: Annotated[int | None, typer.Option("--limit", "-l", help="Max emails to process per rule")] = None,
+    limit: Annotated[int | None, typer.Option("--limit", "-l", help="Max emails to process per rule", min=1)] = None,
     json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
 ) -> None:
     """Apply filter rules to move matching emails."""
@@ -74,23 +74,38 @@ def add_rule_cmd(
     name: Annotated[str, typer.Option("--name", "-n", help="Rule name")],
     account: Annotated[str, typer.Option("--account", "-a", help="Email account name")],
     target_folder: Annotated[str, typer.Option("--target-folder", "-t", help="Target folder for matched emails")],
-    senders: Annotated[str, typer.Option("--senders", "-s", help="Comma-separated sender substrings")],
+    senders: Annotated[str | None, typer.Option("--senders", "-s", help="Comma-separated sender substrings")] = None,
+    subjects: Annotated[str | None, typer.Option("--subjects", help="Comma-separated subject substrings")] = None,
     source_mailbox: Annotated[str, typer.Option("--source-mailbox", help="Source mailbox")] = "INBOX",
     mark_read: Annotated[bool, typer.Option("--mark-read", help="Mark emails as read before moving")] = False,
 ) -> None:
-    """Add a new filter rule."""
+    """Add a new filter rule. Specify either --senders or --subjects (not both)."""
     from mcp_email_server.rules import Rule, add_rule
 
     try:
-        sender_list = [s.strip() for s in senders.split(",") if s.strip()]
-        if not sender_list:
+        if senders and subjects:
+            print_error("Specify either --senders or --subjects, not both.")
+            raise typer.Exit(1)
+        if not senders and not subjects:
+            print_error("Either --senders or --subjects is required.")
+            raise typer.Exit(1)
+
+        sender_list = [s.strip() for s in senders.split(",") if s.strip()] if senders else []
+        subject_list = [s.strip() for s in subjects.split(",") if s.strip()] if subjects else []
+
+        if senders and not sender_list:
             print_error("At least one sender is required.")
             raise typer.Exit(1)
+        if subjects and not subject_list:
+            print_error("At least one subject is required.")
+            raise typer.Exit(1)
+
         rule = Rule(
             name=name,
             account=account,
             target_folder=target_folder,
             senders=sender_list,
+            subjects=subject_list,
             source_mailbox=source_mailbox,
             mark_read=mark_read,
         )
