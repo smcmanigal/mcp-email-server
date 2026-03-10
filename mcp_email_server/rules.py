@@ -34,6 +34,7 @@ class Rule(BaseModel):
     target_folder: str
     senders: list[str]
     source_mailbox: str = "INBOX"
+    mark_read: bool = False
 
     @field_validator("senders")
     @classmethod
@@ -144,6 +145,7 @@ async def apply_rules(
     rules_by_file: dict[str, list[Rule]],
     since: datetime | None = None,
     dry_run: bool = False,
+    limit: int | None = None,
 ) -> list[RuleApplyResult]:
     from mcp_email_server.emails.dispatcher import dispatch_handler
 
@@ -159,6 +161,8 @@ async def apply_rules(
                     source_mailbox=rule.source_mailbox,
                     since=since,
                     dry_run=dry_run,
+                    limit=limit,
+                    mark_read=rule.mark_read,
                 )
                 results.append(
                     RuleApplyResult(

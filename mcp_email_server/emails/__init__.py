@@ -133,6 +133,8 @@ class EmailHandler(abc.ABC):
         source_mailbox: str = "INBOX",
         since: datetime | None = None,
         dry_run: bool = False,
+        limit: int | None = None,
+        mark_read: bool = False,
     ) -> dict[str, list[str]]:
         """Apply a filter rule: search for emails from multiple senders and move them.
 
@@ -142,6 +144,8 @@ class EmailHandler(abc.ABC):
             source_mailbox: Source mailbox to search (default: "INBOX").
             since: Only match emails since this datetime.
             dry_run: If True, return matches without moving.
+            limit: Maximum number of emails to process (default: no limit).
+            mark_read: If True, mark emails as read before moving.
 
         Returns:
             Dict with 'matched', 'moved', and 'failed' lists of email IDs.

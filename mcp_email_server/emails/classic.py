@@ -1118,11 +1118,37 @@ class EmailClient:
             except Exception as e:
                 logger.info(f"Error during logout: {e}")
 
-    async def _search_senders(self, imap, senders: list[str], since: datetime | None) -> list[str]:
-        """Search for emails from multiple senders, returning deduplicated sorted UIDs."""
+    @staticmethod
+    def _build_or_from_criteria(senders: list[str]) -> list[str]:
+        """Build a single IMAP OR tree for multiple FROM criteria.
+
+        IMAP OR is prefix notation with exactly two operands:
+          1 sender:  FROM "a"
+          2 senders: OR FROM "a" FROM "b"
+          3 senders: OR FROM "a" OR FROM "b" FROM "c"
+        """
+        parts = [["FROM", _quote_search_param(s)] for s in senders]
+        result = parts[-1]
+        for part in reversed(parts[:-1]):
+            result = ["OR", *part, *result]
+        return result
+
+    async def _search_senders(
+        self, imap, senders: list[str], since: datetime | None, chunk_size: int = 25
+    ) -> list[str]:
+        """Search for emails from multiple senders using batched OR queries, returning sorted UIDs."""
+        if not senders:
+            return []
+
+        date_criteria = []
+        if since:
+            date_criteria = ["SINCE", since.strftime("%d-%b-%Y").upper()]
+
         all_uids: set[str] = set()
-        for sender in senders:
-            search_criteria = self._build_search_criteria(from_address=sender, since=since)
+        for i in range(0, len(senders), chunk_size):
+            chunk = senders[i : i + chunk_size]
+            or_criteria = self._build_or_from_criteria(chunk)
+            search_criteria = date_criteria + or_criteria
             result, messages = await imap.uid_search(*search_criteria, charset=None)
             if result == "OK" and messages and messages[0]:
                 for uid in messages[0].split():
@@ -1162,6 +1188,72 @@ class EmailClient:
             await imap.expunge()
         return moved, failed
 
+    @staticmethod
+    def _build_uid_set(uids: list[str]) -> str:
+        """Build an IMAP UID set string with range compression.
+
+        Consecutive UIDs are compressed into ranges: [1,2,3,5,7,8,9] -> "1:3,5,7:9"
+        UIDs must be pre-sorted in ascending numeric order.
+        """
+        if not uids:
+            return ""
+        nums = [int(u) for u in uids]
+        ranges = []
+        start = end = nums[0]
+        for n in nums[1:]:
+            if n == end + 1:
+                end = n
+            else:
+                ranges.append(f"{start}:{end}" if end > start else str(start))
+                start = end = n
+        ranges.append(f"{start}:{end}" if end > start else str(start))
+        return ",".join(ranges)
+
+    async def _batch_move_uids(
+        self, imap, email_ids: list[str], target_folder: str, batch_size: int = 80, mark_read: bool = False
+    ) -> tuple[list[str], list[str]]:
+        """Move UIDs in batches using UID set notation. Fails fast on first error."""
+        moved = []
+        failed = []
+        quoted_folder = _quote_mailbox(target_folder)
+
+        for i in range(0, len(email_ids), batch_size):
+            batch = email_ids[i : i + batch_size]
+            uid_set = self._build_uid_set(batch)
+
+            try:
+                if mark_read:
+                    await imap.uid("store", uid_set, "+FLAGS", r"(\Seen)")
+
+                # Try MOVE command first (RFC 6851)
+                try:
+                    response = await imap.uid("move", uid_set, quoted_folder)
+                    if response and response.result == "OK":
+                        logger.info(f"Moved {len(batch)} emails to {target_folder} using MOVE (UIDs: {uid_set})")
+                        moved.extend(batch)
+                        continue
+                except Exception as move_error:
+                    logger.debug(f"MOVE not supported, falling back to COPY+DELETE: {move_error}")
+
+                # Fallback to COPY + DELETE
+                copy_response = await imap.uid("copy", uid_set, quoted_folder)
+                if copy_response and copy_response.result == "OK":
+                    await imap.uid("store", uid_set, "+FLAGS", r"(\Deleted)")
+                    logger.info(f"Moved {len(batch)} emails to {target_folder} using COPY+DELETE (UIDs: {uid_set})")
+                    moved.extend(batch)
+                else:
+                    logger.error(f"Failed to copy batch to {target_folder}: {copy_response}")
+                    failed.extend(batch)
+                    break
+            except Exception as e:
+                logger.error(f"Error moving batch to {target_folder}: {type(e).__name__}: {e!r}")
+                failed.extend(batch)
+                break
+
+        if moved:
+            await imap.expunge()
+        return moved, failed
+
     async def apply_filter_rule(
         self,
         senders: list[str],
@@ -1169,6 +1261,8 @@ class EmailClient:
         source_mailbox: str = "INBOX",
         since: datetime | None = None,
         dry_run: bool = False,
+        limit: int | None = None,
+        mark_read: bool = False,
     ) -> dict[str, list[str]]:
         """Search for emails from multiple senders and move them to a target folder."""
         imap = self._imap_connect()
@@ -1181,15 +1275,18 @@ class EmailClient:
             await imap.select(_quote_mailbox(source_mailbox))
 
             matched = await self._search_senders(imap, senders, since)
+            to_process = matched
+            if limit is not None and len(matched) > limit:
+                to_process = matched[:limit]
 
-            if dry_run or not matched:
+            if dry_run or not to_process:
                 return {"matched": matched, "moved": [], "failed": []}
 
             if not await self.create_folder_if_needed(imap, target_folder):
                 logger.error(f"Failed to create folder: {target_folder}")
-                return {"matched": matched, "moved": [], "failed": matched}
+                return {"matched": matched, "moved": [], "failed": to_process}
 
-            moved, failed = await self._move_uids(imap, matched, target_folder)
+            moved, failed = await self._batch_move_uids(imap, to_process, target_folder, mark_read=mark_read)
             return {"matched": matched, "moved": moved, "failed": failed}
 
         finally:
@@ -1442,9 +1539,19 @@ class ClassicEmailHandler(EmailHandler):
         source_mailbox: str = "INBOX",
         since: datetime | None = None,
         dry_run: bool = False,
+        limit: int | None = None,
+        mark_read: bool = False,
     ) -> dict[str, list[str]]:
         """Apply a filter rule using the incoming client."""
-        return await self.incoming_client.apply_filter_rule(senders, target_folder, source_mailbox, since, dry_run)
+        return await self.incoming_client.apply_filter_rule(
+            senders=senders,
+            target_folder=target_folder,
+            source_mailbox=source_mailbox,
+            since=since,
+            dry_run=dry_run,
+            limit=limit,
+            mark_read=mark_read,
+        )
 
     async def download_attachment(
         self,

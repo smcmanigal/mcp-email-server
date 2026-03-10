@@ -278,6 +278,8 @@ class TestApplyRules:
             source_mailbox="INBOX",
             since=None,
             dry_run=False,
+            limit=None,
+            mark_read=False,
         )
         assert len(results) == 1
         assert results[0].rule_name == "test-rule"
@@ -306,6 +308,8 @@ class TestApplyRules:
             source_mailbox="INBOX",
             since=None,
             dry_run=True,
+            limit=None,
+            mark_read=False,
         )
         assert results[0].dry_run is True
 
@@ -355,17 +359,8 @@ class TestApplyFilterRule:
     async def test_apply_filter_rule_basic(self, email_client):
         mock_imap = _make_mock_imap()
 
-        # Two senders, overlapping UID 102
-        async def search_side_effect(*args, charset=None):
-            criteria = args
-            for c in criteria:
-                if "alice" in str(c):
-                    return ("OK", [b"101 102"])
-                if "bob" in str(c):
-                    return ("OK", [b"102 103"])
-            return ("OK", [b""])
-
-        mock_imap.uid_search.side_effect = search_side_effect
+        # Combined OR query returns all matching UIDs at once
+        mock_imap.uid_search.return_value = ("OK", [b"101 102 103"])
 
         # Folder check passes
         mock_imap.list.return_value = ("OK", [b'(\\HasNoChildren) "/" "Newsletters"'])
@@ -382,10 +377,13 @@ class TestApplyFilterRule:
             target_folder="Newsletters",
         )
 
-        # Deduplicated UIDs: 101, 102, 103
         assert sorted(result["matched"], key=int) == ["101", "102", "103"]
         assert sorted(result["moved"], key=int) == ["101", "102", "103"]
         assert result["failed"] == []
+        # Two senders fit in one chunk — single IMAP search call
+        assert mock_imap.uid_search.call_count == 1
+        call_args = list(mock_imap.uid_search.call_args.args)
+        assert "OR" in call_args
 
     @pytest.mark.asyncio
     async def test_apply_filter_rule_copy_delete_fallback(self, email_client):
@@ -481,6 +479,209 @@ class TestApplyFilterRule:
         assert "01-JAN-2026" in all_args
 
 
+class TestBuildOrFromCriteria:
+    def test_single_sender(self):
+        from mcp_email_server.emails.classic import EmailClient
+
+        result = EmailClient._build_or_from_criteria(["alice@example.com"])
+        assert result == ["FROM", '"alice@example.com"']
+
+    def test_two_senders(self):
+        from mcp_email_server.emails.classic import EmailClient
+
+        result = EmailClient._build_or_from_criteria(["a@x.com", "b@x.com"])
+        assert result == ["OR", "FROM", '"a@x.com"', "FROM", '"b@x.com"']
+
+    def test_three_senders(self):
+        from mcp_email_server.emails.classic import EmailClient
+
+        result = EmailClient._build_or_from_criteria(["a@x.com", "b@x.com", "c@x.com"])
+        assert result == ["OR", "FROM", '"a@x.com"', "OR", "FROM", '"b@x.com"', "FROM", '"c@x.com"']
+
+
+class TestBuildUidSet:
+    def test_single_uid(self):
+        from mcp_email_server.emails.classic import EmailClient
+
+        assert EmailClient._build_uid_set(["42"]) == "42"
+
+    def test_consecutive_range(self):
+        from mcp_email_server.emails.classic import EmailClient
+
+        assert EmailClient._build_uid_set(["1", "2", "3", "4", "5"]) == "1:5"
+
+    def test_gaps(self):
+        from mcp_email_server.emails.classic import EmailClient
+
+        assert EmailClient._build_uid_set(["1", "3", "5"]) == "1,3,5"
+
+    def test_mixed_ranges_and_gaps(self):
+        from mcp_email_server.emails.classic import EmailClient
+
+        assert EmailClient._build_uid_set(["1", "2", "3", "5", "7", "8", "9"]) == "1:3,5,7:9"
+
+    def test_empty_list(self):
+        from mcp_email_server.emails.classic import EmailClient
+
+        assert EmailClient._build_uid_set([]) == ""
+
+
+class TestSearchSendersChunking:
+    @pytest.mark.asyncio
+    async def test_chunking_deduplicates_across_chunks(self, email_client):
+        """Two chunks with overlapping UIDs are deduplicated."""
+        mock_imap = _make_mock_imap()
+
+        mock_imap.uid_search.side_effect = [
+            ("OK", [b"1 2"]),
+            ("OK", [b"2 3"]),
+        ]
+
+        result = await email_client._search_senders(
+            mock_imap, ["a@x.com", "b@x.com", "c@x.com"], since=None, chunk_size=2
+        )
+
+        assert result == ["1", "2", "3"]
+        assert mock_imap.uid_search.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_chunking_builds_or_criteria_per_chunk(self, email_client):
+        """Each chunk builds its own OR tree in the search criteria."""
+        mock_imap = _make_mock_imap()
+
+        mock_imap.uid_search.side_effect = [
+            ("OK", [b"1"]),
+            ("OK", [b"2"]),
+        ]
+
+        await email_client._search_senders(
+            mock_imap, ["a@x.com", "b@x.com", "c@x.com"], since=None, chunk_size=2
+        )
+
+        # First call: 2 senders → OR query
+        first_call_args = list(mock_imap.uid_search.call_args_list[0].args)
+        assert "OR" in first_call_args
+
+        # Second call: 1 sender → no OR
+        second_call_args = list(mock_imap.uid_search.call_args_list[1].args)
+        assert "OR" not in second_call_args
+
+
+class TestBatchMoveUids:
+    @pytest.mark.asyncio
+    async def test_batch_move_with_small_batch_size(self, email_client):
+        """UIDs are split into batches and each batch is moved separately."""
+        mock_imap = _make_mock_imap()
+        move_response = MagicMock()
+        move_response.result = "OK"
+        mock_imap.uid.return_value = move_response
+
+        moved, failed = await email_client._batch_move_uids(
+            mock_imap, ["1", "2", "3", "4", "5"], "Target", batch_size=2
+        )
+
+        assert moved == ["1", "2", "3", "4", "5"]
+        assert failed == []
+        # 3 batches: [1,2], [3,4], [5] → 3 move calls
+        move_calls = [c for c in mock_imap.uid.call_args_list if c.args[0] == "move"]
+        assert len(move_calls) == 3
+        mock_imap.expunge.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_batch_move_fails_fast(self, email_client):
+        """On batch failure, remaining batches are not attempted."""
+        mock_imap = _make_mock_imap()
+
+        batch_count = 0
+
+        async def uid_side_effect(cmd, *args):
+            nonlocal batch_count
+            if cmd == "move":
+                batch_count += 1
+                if batch_count == 2:
+                    # MOVE fails
+                    raise OSError("MOVE not supported")
+                response = MagicMock()
+                response.result = "OK"
+                return response
+            if cmd == "copy":
+                # COPY also fails on the second batch
+                response = MagicMock()
+                response.result = "NO"
+                return response
+            return MagicMock(result="OK")
+
+        mock_imap.uid.side_effect = uid_side_effect
+
+        moved, failed = await email_client._batch_move_uids(
+            mock_imap, ["1", "2", "3", "4", "5", "6"], "Target", batch_size=2
+        )
+
+        assert moved == ["1", "2"]
+        assert failed == ["3", "4"]
+        # Batch [5,6] was never attempted
+        assert batch_count == 2
+
+    @pytest.mark.asyncio
+    async def test_batch_move_with_mark_read(self, email_client):
+        """mark_read=True sets \\Seen flag before moving each batch."""
+        mock_imap = _make_mock_imap()
+        move_response = MagicMock()
+        move_response.result = "OK"
+        mock_imap.uid.return_value = move_response
+
+        moved, failed = await email_client._batch_move_uids(
+            mock_imap, ["1", "2", "3"], "Target", batch_size=2, mark_read=True
+        )
+
+        assert moved == ["1", "2", "3"]
+        assert failed == []
+        # Check that store \Seen was called before each move
+        uid_calls = mock_imap.uid.call_args_list
+        store_calls = [c for c in uid_calls if c.args[0] == "store" and r"(\Seen)" in c.args]
+        assert len(store_calls) == 2  # 2 batches
+
+    @pytest.mark.asyncio
+    async def test_batch_move_uses_uid_set_compression(self, email_client):
+        """Consecutive UIDs are compressed into range notation."""
+        mock_imap = _make_mock_imap()
+        move_response = MagicMock()
+        move_response.result = "OK"
+        mock_imap.uid.return_value = move_response
+
+        await email_client._batch_move_uids(
+            mock_imap, ["1", "2", "3", "5", "6"], "Target", batch_size=100
+        )
+
+        move_call = next(c for c in mock_imap.uid.call_args_list if c.args[0] == "move")
+        uid_set_arg = move_call.args[1]
+        assert uid_set_arg == "1:3,5:6"
+
+
+class TestApplyFilterRuleLimit:
+    @pytest.mark.asyncio
+    async def test_limit_caps_moves_but_reports_full_matched(self, email_client):
+        """limit caps emails moved but matched reports the full search results."""
+        mock_imap = _make_mock_imap()
+        mock_imap.uid_search.return_value = ("OK", [b"1 2 3 4 5"])
+        mock_imap.list.return_value = ("OK", [b'(\\HasNoChildren) "/" "Target"'])
+        move_response = MagicMock()
+        move_response.result = "OK"
+        mock_imap.uid.return_value = move_response
+
+        email_client.imap_class = MagicMock(return_value=mock_imap)
+
+        result = await email_client.apply_filter_rule(
+            senders=["test@example.com"],
+            target_folder="Target",
+            limit=3,
+        )
+
+        assert result["matched"] == ["1", "2", "3", "4", "5"]
+        assert result["moved"] == ["1", "2", "3"]
+        assert result["failed"] == []
+
+
 class TestClassicHandlerApplyFilterRule:
     @pytest.mark.asyncio
     async def test_handler_delegates_to_client(self, classic_handler):
@@ -498,5 +699,11 @@ class TestClassicHandlerApplyFilterRule:
 
         assert result == expected
         classic_handler.incoming_client.apply_filter_rule.assert_called_once_with(
-            ["a@b.com"], "Archive", "INBOX", since, True
+            senders=["a@b.com"],
+            target_folder="Archive",
+            source_mailbox="INBOX",
+            since=since,
+            dry_run=True,
+            limit=None,
+            mark_read=False,
         )

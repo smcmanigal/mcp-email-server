@@ -45,6 +45,7 @@ def apply_rules_cmd(
     file: Annotated[str | None, typer.Option("--file", "-f", help="Filter by rule file name")] = None,
     since: Annotated[datetime | None, typer.Option(help="Only match emails since datetime")] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Show matches without moving")] = False,
+    limit: Annotated[int | None, typer.Option("--limit", "-l", help="Max emails to process per rule")] = None,
     json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
 ) -> None:
     """Apply filter rules to move matching emails."""
@@ -55,7 +56,7 @@ def apply_rules_cmd(
         if not rules_by_file:
             console.print("[dim]No rules to apply.[/dim]")
             return
-        results = asyncio.run(apply_rules(rules_by_file, since=since, dry_run=dry_run))
+        results = asyncio.run(apply_rules(rules_by_file, since=since, dry_run=dry_run, limit=limit))
         if json_output:
             print_json([r.model_dump() for r in results])
         else:
@@ -75,6 +76,7 @@ def add_rule_cmd(
     target_folder: Annotated[str, typer.Option("--target-folder", "-t", help="Target folder for matched emails")],
     senders: Annotated[str, typer.Option("--senders", "-s", help="Comma-separated sender substrings")],
     source_mailbox: Annotated[str, typer.Option("--source-mailbox", help="Source mailbox")] = "INBOX",
+    mark_read: Annotated[bool, typer.Option("--mark-read", help="Mark emails as read before moving")] = False,
 ) -> None:
     """Add a new filter rule."""
     from mcp_email_server.rules import Rule, add_rule
@@ -90,6 +92,7 @@ def add_rule_cmd(
             target_folder=target_folder,
             senders=sender_list,
             source_mailbox=source_mailbox,
+            mark_read=mark_read,
         )
         add_rule(file, rule)
         print_success(f"Added rule '{name}' to {file}")
