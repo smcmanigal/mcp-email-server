@@ -199,12 +199,14 @@ class EmailClient:
         self.smtp_start_tls = self.email_server.start_ssl
         self.smtp_verify_ssl = self.email_server.verify_ssl
 
+    IMAP_TIMEOUT = 30.0
+
     def _imap_connect(self) -> aioimaplib.IMAP4_SSL | aioimaplib.IMAP4:
         """Create a new IMAP connection with the configured SSL context."""
         if self.email_server.use_ssl:
             imap_ssl_context = _create_ssl_context(self.email_server.verify_ssl)
-            return self.imap_class(self.email_server.host, self.email_server.port, ssl_context=imap_ssl_context)
-        return self.imap_class(self.email_server.host, self.email_server.port)
+            return self.imap_class(self.email_server.host, self.email_server.port, ssl_context=imap_ssl_context, timeout=self.IMAP_TIMEOUT)
+        return self.imap_class(self.email_server.host, self.email_server.port, timeout=self.IMAP_TIMEOUT)
 
     def _get_smtp_ssl_context(self) -> ssl.SSLContext | None:
         """Get SSL context for SMTP connections based on verify_ssl setting."""
@@ -968,9 +970,9 @@ class EmailClient:
         """
         if incoming_server.use_ssl:
             imap_ssl_context = _create_ssl_context(incoming_server.verify_ssl)
-            imap = aioimaplib.IMAP4_SSL(incoming_server.host, incoming_server.port, ssl_context=imap_ssl_context)
+            imap = aioimaplib.IMAP4_SSL(incoming_server.host, incoming_server.port, ssl_context=imap_ssl_context, timeout=EmailClient.IMAP_TIMEOUT)
         else:
-            imap = aioimaplib.IMAP4(incoming_server.host, incoming_server.port)
+            imap = aioimaplib.IMAP4(incoming_server.host, incoming_server.port, timeout=EmailClient.IMAP_TIMEOUT)
 
         # Common Sent folder names across different providers
         sent_folder_candidates = [
