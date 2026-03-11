@@ -38,6 +38,7 @@ mcp-email-server rules apply --json                # machine-readable output
 mcp-email-server rules add --file ads --name "Ads" --account "Account" --target-folder "Ads" --senders "a@x.com,b@y.com"
 mcp-email-server rules add --file alerts --name "Alerts" --account "Account" --target-folder "Alerts" --subjects "Alert,Notification"
 mcp-email-server rules add --file junk --name "Junk" --account "Account" --target-folder "Junk" --senders "spam@x.com" --mark-read
+mcp-email-server rules add --file work --name "Work Alerts" --account "Account" --target-folder "Alerts" --senders "alerts@sys.com" --subjects "Critical,Down"  # AND match
 mcp-email-server rules delete --file ads --name "Ads"
 ```
 
@@ -75,7 +76,7 @@ The project is both an **MCP server** and a **CLI tool** sharing the same core l
 - `mcp_email_server/rules.py` — Pydantic models (`Rule`, `RuleFile`, `RuleApplyResult`), TOML file I/O, and `apply_rules()` orchestrator. CLI-only feature (no MCP tools).
 - `mcp_email_server/cli/rules.py` — Typer sub-app with `list`, `apply`, `add`, `delete` commands.
 - **Rule storage**: TOML files in `~/.config/zerolib/mcp_email_server/rules/` (one or more `*.toml` files, each containing `[[rules]]` entries).
-- **Rule format**: Each rule has `name`, `account`, `target_folder`, and either `senders` (IMAP FROM search) or `subjects` (IMAP SUBJECT search) — mutually exclusive. Optional: `source_mailbox` (default: `"INBOX"`), `mark_read` (default: `false`).
+- **Rule format**: Each rule has `name`, `account`, `target_folder`, and at least one of `senders` (IMAP FROM search) or `subjects` (IMAP SUBJECT search). When both are specified, results are AND-intersected (emails must match a sender AND a subject). Optional: `source_mailbox` (default: `"INBOX"`), `mark_read` (default: `false`).
 - **Execution**: `apply_rules()` dispatches one handler per rule. `EmailClient.apply_filter_rule()` opens a **single IMAP connection** per rule, runs batched OR queries (25 values/chunk via `_build_or_criteria()`), deduplicates UIDs, then batch-moves (80 UIDs/batch) using MOVE (RFC 6851) with COPY+DELETE fallback. Fail-fast on batch error.
 - **Shared helpers**: `EmailClient._search_by_field()` (batched OR search + dedup) and `_move_uids()` (MOVE/COPY+DELETE + expunge) are reused by both `apply_filter_rule` and `move_emails_to_folder`.
 - **Path safety**: `_validate_rule_path()` prevents path traversal in file names.

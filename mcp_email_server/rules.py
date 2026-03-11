@@ -38,13 +38,9 @@ class Rule(BaseModel):
     mark_read: bool = False
 
     @model_validator(mode="after")
-    def exactly_one_criteria(self) -> Rule:
-        has_senders = bool(self.senders)
-        has_subjects = bool(self.subjects)
-        if has_senders and has_subjects:
-            raise ValueError("A rule must specify either senders or subjects, not both")
-        if not has_senders and not has_subjects:
-            raise ValueError("A rule must specify either senders or subjects")
+    def at_least_one_criteria(self) -> Rule:
+        if not self.senders and not self.subjects:
+            raise ValueError("A rule must specify senders, subjects, or both")
         return self
 
 

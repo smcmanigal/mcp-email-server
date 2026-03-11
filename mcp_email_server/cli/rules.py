@@ -79,13 +79,10 @@ def add_rule_cmd(
     source_mailbox: Annotated[str, typer.Option("--source-mailbox", help="Source mailbox")] = "INBOX",
     mark_read: Annotated[bool, typer.Option("--mark-read", help="Mark emails as read before moving")] = False,
 ) -> None:
-    """Add a new filter rule. Specify either --senders or --subjects (not both)."""
+    """Add a new filter rule. Specify --senders, --subjects, or both (AND match)."""
     from mcp_email_server.rules import Rule, add_rule
 
     try:
-        if senders and subjects:
-            print_error("Specify either --senders or --subjects, not both.")
-            raise typer.Exit(1)
         if not senders and not subjects:
             print_error("Either --senders or --subjects is required.")
             raise typer.Exit(1)

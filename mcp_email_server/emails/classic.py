@@ -1270,11 +1270,7 @@ class EmailClient:
         """Search for emails matching criteria and move them to a target folder."""
         if limit is not None and limit < 1:
             raise ValueError("limit must be a positive integer")
-        if senders:
-            field, values = "FROM", senders
-        elif subjects:
-            field, values = "SUBJECT", subjects
-        else:
+        if not senders and not subjects:
             raise ValueError("Either senders or subjects must be provided")
 
         imap = self._imap_connect()
@@ -1286,7 +1282,14 @@ class EmailClient:
             await _send_imap_id(imap)
             await imap.select(_quote_mailbox(source_mailbox))
 
-            matched = await self._search_by_field(imap, field, values, since)
+            if senders and subjects:
+                from_uids = await self._search_by_field(imap, "FROM", senders, since)
+                subject_uids = await self._search_by_field(imap, "SUBJECT", subjects, since)
+                matched = sorted(set(from_uids) & set(subject_uids), key=lambda uid: int(uid))
+            elif senders:
+                matched = await self._search_by_field(imap, "FROM", senders, since)
+            else:
+                matched = await self._search_by_field(imap, "SUBJECT", subjects, since)
             to_process = matched
             if limit is not None and len(matched) > limit:
                 to_process = matched[:limit]

@@ -94,16 +94,22 @@ def print_rules_table(rules_by_file: dict, rules_dir: Path) -> None:
     table.add_column("Account", style="green")
     table.add_column("Source", style="white")
     table.add_column("Target", style="magenta")
-    table.add_column("Senders", style="white")
+    table.add_column("Criteria", style="white")
     for file_name, rules in rules_by_file.items():
         for rule in rules:
+            parts = []
+            if rule.senders:
+                parts.append(f"FROM: {', '.join(rule.senders)}")
+            if rule.subjects:
+                parts.append(f"SUBJECT: {', '.join(rule.subjects)}")
+            criteria = " AND ".join(parts)
             table.add_row(
                 file_name,
                 rule.name,
                 rule.account,
                 rule.source_mailbox,
                 rule.target_folder,
-                ", ".join(rule.senders),
+                criteria,
             )
     console.print(table)
 

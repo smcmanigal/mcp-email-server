@@ -106,12 +106,13 @@ class TestRuleModel:
         assert rule.source_mailbox == "INBOX"
 
     def test_empty_senders_and_subjects_raises(self):
-        with pytest.raises(ValidationError, match="must specify either senders or subjects"):
+        with pytest.raises(ValidationError, match="must specify senders, subjects, or both"):
             Rule(name="bad", account="acct", target_folder="X")
 
-    def test_both_senders_and_subjects_raises(self):
-        with pytest.raises(ValidationError, match="not both"):
-            Rule(name="bad", account="acct", target_folder="X", senders=["a@b.com"], subjects=["test"])
+    def test_both_senders_and_subjects_valid(self):
+        rule = Rule(name="combined", account="acct", target_folder="X", senders=["a@b.com"], subjects=["test"])
+        assert rule.senders == ["a@b.com"]
+        assert rule.subjects == ["test"]
 
     def test_subject_rule(self):
         rule = Rule(name="subj", account="acct", target_folder="Alerts", subjects=["Alert", "Notification"])
@@ -756,6 +757,171 @@ class TestApplyFilterRuleSubjects:
         """Calling with neither senders nor subjects raises ValueError."""
         with pytest.raises(ValueError, match="Either senders or subjects must be provided"):
             await email_client.apply_filter_rule(target_folder="X")
+
+
+class TestApplyFilterRuleCombined:
+    @pytest.mark.asyncio
+    async def test_and_intersection(self, email_client):
+        """AND mode: only UIDs present in both FROM and SUBJECT results are matched."""
+        mock_imap = _make_mock_imap()
+        # FROM search returns 1,2,3,4; SUBJECT search returns 3,4,5,6
+        mock_imap.uid_search.side_effect = [
+            ("OK", [b"1 2 3 4"]),
+            ("OK", [b"3 4 5 6"]),
+        ]
+        mock_imap.list.return_value = ("OK", [b'(\\HasNoChildren) "/" "Target"'])
+        move_response = MagicMock()
+        move_response.result = "OK"
+        mock_imap.uid.return_value = move_response
+
+        email_client.imap_class = MagicMock(return_value=mock_imap)
+
+        result = await email_client.apply_filter_rule(
+            senders=["alice@example.com"],
+            subjects=["Alert"],
+            target_folder="Target",
+        )
+
+        assert result["matched"] == ["3", "4"]
+        assert result["moved"] == ["3", "4"]
+        assert result["failed"] == []
+
+    @pytest.mark.asyncio
+    async def test_and_no_overlap(self, email_client):
+        """AND mode with no common UIDs → 0 matched, nothing moved."""
+        mock_imap = _make_mock_imap()
+        mock_imap.uid_search.side_effect = [
+            ("OK", [b"1 2"]),
+            ("OK", [b"3 4"]),
+        ]
+
+        email_client.imap_class = MagicMock(return_value=mock_imap)
+
+        result = await email_client.apply_filter_rule(
+            senders=["alice@example.com"],
+            subjects=["Alert"],
+            target_folder="Target",
+        )
+
+        assert result["matched"] == []
+        assert result["moved"] == []
+        assert result["failed"] == []
+
+    @pytest.mark.asyncio
+    async def test_and_with_limit(self, email_client):
+        """AND mode respects limit on the intersected result."""
+        mock_imap = _make_mock_imap()
+        mock_imap.uid_search.side_effect = [
+            ("OK", [b"1 2 3 4 5"]),
+            ("OK", [b"2 3 4 5 6"]),
+        ]
+        mock_imap.list.return_value = ("OK", [b'(\\HasNoChildren) "/" "Target"'])
+        move_response = MagicMock()
+        move_response.result = "OK"
+        mock_imap.uid.return_value = move_response
+
+        email_client.imap_class = MagicMock(return_value=mock_imap)
+
+        result = await email_client.apply_filter_rule(
+            senders=["alice@example.com"],
+            subjects=["Alert"],
+            target_folder="Target",
+            limit=2,
+        )
+
+        assert result["matched"] == ["2", "3", "4", "5"]
+        assert result["moved"] == ["2", "3"]
+        assert result["failed"] == []
+
+    @pytest.mark.asyncio
+    async def test_and_with_dry_run(self, email_client):
+        """AND mode dry_run returns intersected matches without moving."""
+        mock_imap = _make_mock_imap()
+        mock_imap.uid_search.side_effect = [
+            ("OK", [b"10 20 30"]),
+            ("OK", [b"20 30 40"]),
+        ]
+
+        email_client.imap_class = MagicMock(return_value=mock_imap)
+
+        result = await email_client.apply_filter_rule(
+            senders=["alice@example.com"],
+            subjects=["Alert"],
+            target_folder="Target",
+            dry_run=True,
+        )
+
+        assert result["matched"] == ["20", "30"]
+        assert result["moved"] == []
+        assert result["failed"] == []
+        mock_imap.uid.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_and_with_mark_read(self, email_client):
+        """AND mode applies mark_read to intersected UIDs."""
+        mock_imap = _make_mock_imap()
+        mock_imap.uid_search.side_effect = [
+            ("OK", [b"1 2 3"]),
+            ("OK", [b"2 3 4"]),
+        ]
+        mock_imap.list.return_value = ("OK", [b'(\\HasNoChildren) "/" "Target"'])
+        move_response = MagicMock()
+        move_response.result = "OK"
+        mock_imap.uid.return_value = move_response
+
+        email_client.imap_class = MagicMock(return_value=mock_imap)
+
+        result = await email_client.apply_filter_rule(
+            senders=["alice@example.com"],
+            subjects=["Alert"],
+            target_folder="Target",
+            mark_read=True,
+        )
+
+        assert result["matched"] == ["2", "3"]
+        assert result["moved"] == ["2", "3"]
+        # Verify store \Seen was called
+        uid_calls = mock_imap.uid.call_args_list
+        store_calls = [c for c in uid_calls if c.args[0] == "store" and r"(\Seen)" in c.args]
+        assert len(store_calls) == 1
+
+
+class TestApplyRulesCombined:
+    @pytest.mark.asyncio
+    async def test_apply_rules_with_combined_rule(self):
+        """apply_rules passes both senders and subjects when both are set."""
+        mock_handler = AsyncMock()
+        mock_handler.apply_filter_rule.return_value = {
+            "matched": ["5"],
+            "moved": ["5"],
+            "failed": [],
+        }
+
+        rule = Rule(
+            name="combined",
+            account="test_account",
+            target_folder="Target",
+            senders=["alice@example.com"],
+            subjects=["Alert"],
+        )
+        rules_by_file = {"test_file": [rule]}
+
+        with patch("mcp_email_server.emails.dispatcher.dispatch_handler", return_value=mock_handler):
+            results = await apply_rules(rules_by_file)
+
+        mock_handler.apply_filter_rule.assert_called_once_with(
+            senders=["alice@example.com"],
+            subjects=["Alert"],
+            target_folder="Target",
+            source_mailbox="INBOX",
+            since=None,
+            dry_run=False,
+            limit=None,
+            mark_read=False,
+        )
+        assert len(results) == 1
+        assert results[0].matched == 1
+        assert results[0].moved == 1
 
 
 class TestClassicHandlerApplyFilterRule:

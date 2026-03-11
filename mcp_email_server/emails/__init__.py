@@ -139,7 +139,7 @@ class EmailHandler(abc.ABC):
     ) -> dict[str, list[str]]:
         """Apply a filter rule: search for emails matching criteria and move them.
 
-        Exactly one of senders or subjects must be provided.
+        At least one of senders or subjects must be provided. When both are given, results are AND-intersected.
 
         Args:
             senders: List of sender substrings to match (IMAP FROM search).
