@@ -1080,10 +1080,13 @@ class EmailClient:
         """Create a folder if it doesn't exist, using an existing IMAP connection."""
         try:
             _, existing = await imap.list('""', _quote_mailbox(folder_name))
-            if existing and any(isinstance(item, bytes) and len(item) > 2 for item in existing):
+            if existing and any(isinstance(item, bytes) and b")" in item for item in existing):
                 return True
 
-            await imap.create(_quote_mailbox(folder_name))
+            result = await imap.create(_quote_mailbox(folder_name))
+            if result.result != "OK":
+                logger.error(f"IMAP CREATE failed for {folder_name}: {result.lines}")
+                return False
             logger.info(f"Created folder: {folder_name}")
             return True
         except Exception as e:

@@ -143,7 +143,9 @@ class TestMoveEmailsCreateMissingFolder:
 
         # Folder does NOT exist (list returns empty)
         mock_imap.list.return_value = ("OK", [])
-        mock_imap.create.return_value = ("OK", [])
+        create_response = MagicMock()
+        create_response.result = "OK"
+        mock_imap.create.return_value = create_response
 
         # MOVE succeeds
         move_response = MagicMock()
@@ -188,6 +190,37 @@ class TestMoveEmailsCreateMissingFolder:
         # Verify list/create were NOT called
         mock_imap.list.assert_not_called()
         mock_imap.create.assert_not_called()
+
+
+class TestCreateFolderFailed:
+    """Test handling when IMAP CREATE is rejected by the server."""
+
+    @pytest.mark.asyncio
+    async def test_create_folder_failure_returns_all_failed(self, email_client):
+        """When CREATE fails (e.g. Exchange rejects it), all emails should be reported as failed."""
+        mock_imap = _make_mock_imap()
+
+        # Folder does NOT exist
+        mock_imap.list.return_value = ("OK", [])
+        # CREATE is rejected by server
+        create_response = MagicMock()
+        create_response.result = "NO"
+        create_response.lines = [b"CREATE failed"]
+        mock_imap.create.return_value = create_response
+
+        email_client.imap_class = MagicMock(return_value=mock_imap)
+
+        result = await email_client.move_emails_to_folder(
+            email_ids=["100", "101"],
+            target_folder="NewFolder",
+            source_mailbox="INBOX",
+            create_if_missing=True,
+        )
+
+        assert result["moved"] == []
+        assert result["failed"] == ["100", "101"]
+        # MOVE should never have been attempted
+        mock_imap.uid.assert_not_called()
 
 
 class TestMoveEmailsInvalidId:
