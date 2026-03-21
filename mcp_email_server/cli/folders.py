@@ -5,7 +5,7 @@ from typing import Annotated
 
 import typer
 
-from mcp_email_server.cli.formatting import print_error, print_folders, print_json
+from mcp_email_server.cli.formatting import print_error, print_folders, print_json, print_success
 from mcp_email_server.emails.dispatcher import dispatch_handler
 
 folders_app = typer.Typer(help="Folder operations")
@@ -25,6 +25,27 @@ def list_folders(
             print_json(result)
         else:
             print_folders(result)
+    except Exception as e:
+        print_error(str(e))
+        raise typer.Exit(code=1) from None
+
+
+@folders_app.command("create")
+def create_folder(
+    account: Annotated[str, typer.Option("--account", "-a", help="Email account name")],
+    folder_name: Annotated[str, typer.Argument(help="Folder name to create")],
+) -> None:
+    """Create a mailbox folder."""
+    try:
+        handler = dispatch_handler(account)
+        created = asyncio.run(handler.incoming_client.create_folder(folder_name))
+        if created:
+            print_success(f"Folder '{folder_name}' is ready")
+        else:
+            print_error(f"Failed to create folder '{folder_name}'")
+            raise typer.Exit(1)
+    except typer.Exit:
+        raise
     except Exception as e:
         print_error(str(e))
         raise typer.Exit(code=1) from None

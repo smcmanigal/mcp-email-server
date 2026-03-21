@@ -1093,6 +1093,22 @@ class EmailClient:
             logger.error(f"Error creating folder {folder_name}: {type(e).__name__}: {e!r}")
             return False
 
+    async def create_folder(self, folder_name: str) -> bool:
+        """Create a folder, managing its own IMAP connection."""
+        imap = self._imap_connect()
+        try:
+            await imap._client_task
+            await imap.wait_hello_from_server()
+            await _imap_authenticate(imap, self.email_server, self.auth_type, self.email_address,
+                                     self.oauth2_provider, self.oauth2_client_id, self.oauth2_tenant_id, self.oauth2_client_secret)
+            await _send_imap_id(imap)
+            return await self.create_folder_if_needed(imap, folder_name)
+        finally:
+            try:
+                await imap.logout()
+            except Exception as e:
+                logger.info(f"Error during logout: {e}")
+
     async def move_emails_to_folder(
         self,
         email_ids: list[str],
