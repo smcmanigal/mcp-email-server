@@ -40,6 +40,17 @@ mcp-email-server rules add --file alerts --name "Alerts" --account "Account" --t
 mcp-email-server rules add --file junk --name "Junk" --account "Account" --target-folder "Junk" --senders "spam@x.com" --mark-read
 mcp-email-server rules add --file work --name "Work Alerts" --account "Account" --target-folder "Alerts" --senders "alerts@sys.com" --subjects "Critical,Down"  # AND match
 mcp-email-server rules delete --file ads --name "Ads"
+
+# Flags
+mcp-email-server flags add -a "Account" -f "\\Seen" <email_id> ...          # mark as read
+mcp-email-server flags remove -a "Account" -f "\\Seen" <email_id> ...       # mark as unread
+mcp-email-server flags add -a "Account" -f "\\Flagged" <email_id> ...       # star/flag
+mcp-email-server flags remove -a "Account" -f "\\Flagged" <email_id> ...    # unstar/unflag
+mcp-email-server flags replace -a "Account" -f "\\Seen" <email_id> ...      # replace all flags
+
+# Folders
+mcp-email-server folders list -a "Account"                                   # list all folders
+mcp-email-server folders create -a "Account" "FolderName"                    # create a folder
 ```
 
 ## Architecture

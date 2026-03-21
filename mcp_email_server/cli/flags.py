@@ -47,7 +47,7 @@ def _run_flag_operation(
 def add_flags(
     email_ids: Annotated[list[str], typer.Argument(help="Email IDs to modify")],
     account: Annotated[str, typer.Option("--account", "-a", help="Email account name")],
-    flag: Annotated[list[str], typer.Option("--flag", "-f", help="Flag to add (can be repeated)")],
+    flag: Annotated[list[str], typer.Option("--flag", "--flags", "-f", help="Flag to add (can be repeated)")],
     mailbox: Annotated[str, typer.Option(help="Mailbox name")] = "INBOX",
     silent: Annotated[bool, typer.Option(help="Suppress server responses")] = False,
     json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
@@ -64,7 +64,7 @@ def add_flags(
 def remove_flags(
     email_ids: Annotated[list[str], typer.Argument(help="Email IDs to modify")],
     account: Annotated[str, typer.Option("--account", "-a", help="Email account name")],
-    flag: Annotated[list[str], typer.Option("--flag", "-f", help="Flag to remove (can be repeated)")],
+    flag: Annotated[list[str], typer.Option("--flag", "--flags", "-f", help="Flag to remove (can be repeated)")],
     mailbox: Annotated[str, typer.Option(help="Mailbox name")] = "INBOX",
     silent: Annotated[bool, typer.Option(help="Suppress server responses")] = False,
     json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
@@ -81,7 +81,7 @@ def remove_flags(
 def replace_flags(
     email_ids: Annotated[list[str], typer.Argument(help="Email IDs to modify")],
     account: Annotated[str, typer.Option("--account", "-a", help="Email account name")],
-    flag: Annotated[list[str], typer.Option("--flag", "-f", help="Flag to set (can be repeated)")],
+    flag: Annotated[list[str], typer.Option("--flag", "--flags", "-f", help="Flag to set (can be repeated)")],
     mailbox: Annotated[str, typer.Option(help="Mailbox name")] = "INBOX",
     silent: Annotated[bool, typer.Option(help="Suppress server responses")] = False,
     json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
