@@ -68,6 +68,17 @@ class OAuth2TokenManager(abc.ABC):
         flow = self.initiate_device_code_flow()
         return self.complete_device_code_flow(flow)
 
+    def refresh_access_token(self, email: str) -> str:
+        """Try to get a new access token using cached refresh credentials only (no user interaction).
+
+        Returns a valid access token if refresh succeeded.
+        Raises RuntimeError if no cached credentials exist, refresh token is missing/revoked, etc.
+
+        Default implementation delegates to get_access_token(), which works for providers
+        like MSAL that handle refresh internally via acquire_token_silent().
+        """
+        return self.get_access_token(email)
+
     @abc.abstractmethod
     def remove_account(self, email: str) -> bool:
         """Clear cached tokens for the given email. Returns True if tokens were removed."""
@@ -281,6 +292,25 @@ class GoogleTokenManager(OAuth2TokenManager):
             "email": email,
             "token_type": "Bearer",
         }
+
+    def refresh_access_token(self, email: str) -> str:
+        """Force-refresh the access token using the stored refresh token (no browser needed)."""
+        import google.auth.transport.requests
+
+        credentials = self._load_credentials(email)
+        if credentials is None:
+            raise RuntimeError(f"No cached credentials for {email}. Run OAuth2 setup first.")
+
+        if not credentials.refresh_token:
+            raise RuntimeError(f"No refresh token cached for {email}. Full re-authentication required.")
+
+        credentials.refresh(google.auth.transport.requests.Request())
+        self._save_credentials(email, credentials)
+
+        if credentials.token:
+            return credentials.token
+
+        raise RuntimeError(f"Failed to refresh token for {email}")
 
     @property
     def uses_device_code_flow(self) -> bool:

@@ -25,6 +25,8 @@ uv run mcp-email-server ui
 # CLI (after global install)
 mcp-email-server accounts list
 mcp-email-server accounts add-oauth2          # interactive OAuth2 setup (M365/Google)
+mcp-email-server accounts reauth -a "Account" # re-auth (tries token refresh first, then full flow)
+mcp-email-server accounts reauth -a "Account" --force  # skip refresh, force full auth flow
 mcp-email-server emails list -a "Account Name" --since "2026-01-01T00:00:00"
 mcp-email-server emails read -a "Account Name" <email_id>
 
@@ -80,6 +82,9 @@ The project is both an **MCP server** and a **CLI tool** sharing the same core l
   - **Microsoft**: Two-step device code flow (`initiate_device_code_flow` → user enters code → `complete_device_code_flow`).
   - **Google**: Single-step browser redirect flow (`run_auth_flow` using `InstalledAppFlow.run_local_server` with `open_browser=False`). Google's device code flow does not support the `https://mail.google.com/` scope.
 - **CLI**: `mcp-email-server accounts add-oauth2` — handles both flows automatically based on provider.
+- **Reauth**: `accounts reauth` tries `refresh_access_token()` first (uses cached refresh token — no browser/device code needed). Falls back to full auth flow only if refresh fails. `--force` skips the refresh attempt. MCP tool `reauth_oauth2_account` has matching `force` parameter.
+- **`refresh_access_token()`**: Base class delegates to `get_access_token()` (works for MSAL which handles refresh internally). `GoogleTokenManager` overrides to always call `credentials.refresh()` regardless of expiry state, since we don't cache the expiry time.
+- **Headless environments**: Google's `run_local_server()` requires a localhost redirect, which doesn't work in SSH/Docker. Token refresh via `reauth` (without `--force`) avoids this. For initial auth on headless systems, use SSH port forwarding (`ssh -L 8080:localhost:8080`).
 - **MCP tools**: `initiate_oauth2_setup` / `complete_oauth2_setup` — Microsoft uses both steps; Google completes fully in `initiate_oauth2_setup` (no need to call `complete_oauth2_setup`).
 - **Cleanup**: `Settings.delete_email()` automatically removes cached OAuth2 tokens.
 

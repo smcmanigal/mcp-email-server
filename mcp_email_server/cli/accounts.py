@@ -131,8 +131,14 @@ def remove_account(
 @accounts_app.command("reauth")
 def reauth_account(
     account_name: Annotated[str, typer.Option("--account", "-a", help="Account name to re-authenticate")],
+    force: Annotated[bool, typer.Option("--force", help="Skip token refresh and force full re-authentication flow")] = False,
 ) -> None:
-    """Re-authenticate an existing OAuth2 account (refresh tokens)."""
+    """Re-authenticate an existing OAuth2 account.
+
+    By default, tries to refresh the access token using the cached refresh token
+    (no browser or device code needed). Falls back to the full authentication flow
+    only if refresh fails. Use --force to skip the refresh attempt.
+    """
     settings = get_settings()
     account = settings.get_account(account_name)
 
@@ -155,6 +161,15 @@ def reauth_account(
         tenant_id=account.oauth2_tenant_id or "common",
         client_secret=account.oauth2_client_secret,
     )
+
+    # Try token refresh first (no user interaction needed)
+    if not force:
+        try:
+            manager.refresh_access_token(account.email_address)
+            print_success(f"Account '{account_name}' re-authenticated successfully (token refreshed).")
+            return
+        except RuntimeError:
+            console.print("[dim]Token refresh failed, falling back to full authentication flow...[/dim]")
 
     if manager.uses_device_code_flow:
         try:

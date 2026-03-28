@@ -325,6 +325,65 @@ class TestGoogleTokenManager:
             saved = json.loads(cache_path.read_text())
             assert "user@gmail.com" in saved
 
+    def test_refresh_access_token_success(self, tmp_path):
+        """Test force-refresh using stored refresh token."""
+        cache_path = tmp_path / "google_cache.json"
+        cache_path.write_text(json.dumps({
+            "user@gmail.com": {
+                "token": "old_token",
+                "refresh_token": "refresh_tok",
+                "client_id": "cid",
+                "client_secret": "csec",
+            }
+        }))
+
+        with patch("google.oauth2.credentials.Credentials") as mock_creds_cls, patch(
+            "google.auth.transport.requests.Request"
+        ) as mock_request_cls:
+            mock_creds = MagicMock()
+            mock_creds.refresh_token = "refresh_tok"
+            mock_creds.token = "refreshed_token"
+            mock_creds.client_id = "cid"
+            mock_creds.client_secret = "csec"
+            mock_creds_cls.return_value = mock_creds
+
+            manager = GoogleTokenManager(client_id="cid", client_secret="csec", cache_path=cache_path)
+            token = manager.refresh_access_token("user@gmail.com")
+
+            assert token == "refreshed_token"
+            # Always calls refresh regardless of expiry state
+            mock_creds.refresh.assert_called_once_with(mock_request_cls.return_value)
+
+    def test_refresh_access_token_no_cached_creds(self, tmp_path):
+        """Test refresh_access_token raises when no cached credentials."""
+        cache_path = tmp_path / "google_cache.json"
+        manager = GoogleTokenManager(client_id="cid", client_secret="csec", cache_path=cache_path)
+
+        with pytest.raises(RuntimeError, match="No cached credentials"):
+            manager.refresh_access_token("user@gmail.com")
+
+    def test_refresh_access_token_no_refresh_token(self, tmp_path):
+        """Test refresh_access_token raises when no refresh token is cached."""
+        cache_path = tmp_path / "google_cache.json"
+        cache_path.write_text(json.dumps({
+            "user@gmail.com": {
+                "token": "old_token",
+                "refresh_token": None,
+                "client_id": "cid",
+                "client_secret": "csec",
+            }
+        }))
+
+        with patch("google.oauth2.credentials.Credentials") as mock_creds_cls:
+            mock_creds = MagicMock()
+            mock_creds.refresh_token = None
+            mock_creds_cls.return_value = mock_creds
+
+            manager = GoogleTokenManager(client_id="cid", client_secret="csec", cache_path=cache_path)
+
+            with pytest.raises(RuntimeError, match="No refresh token"):
+                manager.refresh_access_token("user@gmail.com")
+
     def test_remove_account_success(self, tmp_path):
         """Test successful account removal."""
         cache_path = tmp_path / "google_cache.json"

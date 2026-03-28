@@ -497,10 +497,14 @@ def _save_oauth2_account(
 
 
 @mcp.tool(
-    description="Re-authenticate an existing OAuth2 account by running the auth flow again. Use when tokens have expired or been revoked. For Microsoft, returns a verification URL/code (call complete_oauth2_reauth after user authenticates). For Google, completes in one call."
+    description="Re-authenticate an existing OAuth2 account. By default, tries to refresh the access token using the cached refresh token (no browser/device code needed). Falls back to the full auth flow only if refresh fails. Set force=True to skip refresh and run the full flow. For Microsoft fallback, returns a verification URL/code (call complete_oauth2_reauth after user authenticates). For Google fallback, completes in one call."
 )
 async def reauth_oauth2_account(
     account_name: Annotated[str, Field(description="Name of the existing OAuth2 account to re-authenticate.")],
+    force: Annotated[
+        bool,
+        Field(default=False, description="Skip token refresh and force full re-authentication flow."),
+    ] = False,
 ) -> dict:
     settings = get_settings()
     account = settings.get_account(account_name)
@@ -511,12 +515,6 @@ async def reauth_oauth2_account(
     if not isinstance(account, EmailSettings) or account.auth_type != "oauth2":
         raise ValueError(f"Account '{account_name}' is not an OAuth2 account.")
 
-    # Clean up expired flows
-    now = time.time()
-    expired = [k for k, v in _pending_oauth2_flows.items() if now - v.get("created_at", 0) > _OAUTH2_FLOW_EXPIRY_SECONDS]
-    for k in expired:
-        del _pending_oauth2_flows[k]
-
     from mcp_email_server.oauth2 import get_token_manager
 
     manager = get_token_manager(
@@ -525,6 +523,24 @@ async def reauth_oauth2_account(
         tenant_id=account.oauth2_tenant_id or "common",
         client_secret=account.oauth2_client_secret,
     )
+
+    # Try token refresh first (no user interaction needed)
+    if not force:
+        try:
+            await asyncio.to_thread(manager.refresh_access_token, account.email_address)
+            return {
+                "message": f"Successfully re-authenticated account '{account_name}' (token refreshed).",
+                "complete": True,
+                "method": "refresh",
+            }
+        except RuntimeError:
+            pass  # Fall through to full auth flow
+
+    # Clean up expired flows
+    now = time.time()
+    expired = [k for k, v in _pending_oauth2_flows.items() if now - v.get("created_at", 0) > _OAUTH2_FLOW_EXPIRY_SECONDS]
+    for k in expired:
+        del _pending_oauth2_flows[k]
 
     if manager.uses_device_code_flow:
         flow = manager.initiate_device_code_flow()
