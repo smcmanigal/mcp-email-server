@@ -2,7 +2,7 @@ import os
 from unittest.mock import patch
 
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from mcp_email_server.config import (
     CONFIG_PATH,
@@ -13,6 +13,49 @@ from mcp_email_server.config import (
     get_settings,
     store_settings,
 )
+
+
+def test_sensitive_fields_excluded_from_repr():
+    """Verify password and api_key are not in repr or str output."""
+    server = EmailServer(
+        user_name="user",
+        password="secret_pass",
+        host="imap.example.com",
+        port=993,
+    )
+    assert "secret_pass" not in repr(server)
+    assert "secret_pass" not in str(server)
+
+    provider = ProviderSettings(
+        account_name="p",
+        provider_name="test",
+        api_key="secret_key",
+    )
+    assert "secret_key" not in repr(provider)
+    assert "secret_key" not in str(provider)
+
+
+def test_password_is_secret_type():
+    """Password field must be SecretStr."""
+    server = EmailServer(
+        user_name="user",
+        password="s3cret",
+        host="imap.example.com",
+        port=993,
+    )
+    assert isinstance(server.password, SecretStr)
+    assert server.password.get_secret_value() == "s3cret"
+
+
+def test_api_key_is_secret_type():
+    """API key field must be SecretStr."""
+    provider = ProviderSettings(
+        account_name="test",
+        provider_name="test",
+        api_key="sk-123",
+    )
+    assert isinstance(provider.api_key, SecretStr)
+    assert provider.api_key.get_secret_value() == "sk-123"
 
 
 def test_config():
@@ -144,8 +187,8 @@ class TestOAuth2Config:
             oauth2_client_id="google-client-id",
             oauth2_client_secret="google-secret",
         )
-        assert settings.incoming.password == ""
-        assert settings.outgoing.password == ""
+        assert settings.incoming.password.get_secret_value() == ""
+        assert settings.outgoing.password.get_secret_value() == ""
         assert settings.auth_type == "oauth2"
 
     def test_oauth2_init_factory(self):
@@ -166,7 +209,7 @@ class TestOAuth2Config:
         assert settings.oauth2_provider == "microsoft"
         assert settings.oauth2_client_id == "my-client-id"
         assert settings.oauth2_tenant_id == "my-tenant"
-        assert settings.incoming.password == ""
+        assert settings.incoming.password.get_secret_value() == ""
 
     def test_from_env_oauth2(self):
         """Test EmailSettings.from_env() with OAuth2 env vars."""

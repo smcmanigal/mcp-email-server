@@ -140,7 +140,7 @@ async def _imap_authenticate(
         if hasattr(response, "result") and response.result != "OK":
             raise RuntimeError(f"IMAP XOAUTH2 authentication failed: {response}")
     else:
-        await imap.login(email_server.user_name, email_server.password)
+        await imap.login(email_server.user_name, email_server.password.get_secret_value())
 
 
 async def _smtp_authenticate(
@@ -169,7 +169,7 @@ async def _smtp_authenticate(
         auth_b64 = base64.b64encode(auth_string.encode())
         await smtp.execute_command(b"AUTH", b"XOAUTH2", auth_b64)
     else:
-        await smtp.login(email_server.user_name, email_server.password)
+        await smtp.login(email_server.user_name, email_server.password.get_secret_value())
 
 
 class EmailClient:
