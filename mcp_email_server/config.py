@@ -300,7 +300,12 @@ class Settings(BaseSettings):
         """Use re-assigned for validation to work."""
         # Find account before deleting to check for OAuth2
         account = self.get_account(account_name)
-        if isinstance(account, EmailSettings) and account.auth_type == "oauth2" and account.oauth2_provider and account.oauth2_client_id:
+        if (
+            isinstance(account, EmailSettings)
+            and account.auth_type == "oauth2"
+            and account.oauth2_provider
+            and account.oauth2_client_id
+        ):
             try:
                 from mcp_email_server.oauth2 import get_token_manager
 

@@ -590,9 +590,7 @@ class TestSearchByFieldChunking:
         mock_imap = _make_mock_imap()
         mock_imap.uid_search.return_value = ("OK", [b"10 20"])
 
-        result = await email_client._search_by_field(
-            mock_imap, "SUBJECT", ["Alert", "Notification"], since=None
-        )
+        result = await email_client._search_by_field(mock_imap, "SUBJECT", ["Alert", "Notification"], since=None)
 
         assert result == ["10", "20"]
         call_args = list(mock_imap.uid_search.call_args.args)
@@ -682,9 +680,7 @@ class TestBatchMoveUids:
         move_response.result = "OK"
         mock_imap.uid.return_value = move_response
 
-        await email_client._batch_move_uids(
-            mock_imap, ["1", "2", "3", "5", "6"], "Target", batch_size=100
-        )
+        await email_client._batch_move_uids(mock_imap, ["1", "2", "3", "5", "6"], "Target", batch_size=100)
 
         move_call = next(c for c in mock_imap.uid.call_args_list if c.args[0] == "move")
         uid_set_arg = move_call.args[1]

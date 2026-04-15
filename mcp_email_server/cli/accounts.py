@@ -131,7 +131,9 @@ def remove_account(
 @accounts_app.command("reauth")
 def reauth_account(
     account_name: Annotated[str, typer.Option("--account", "-a", help="Account name to re-authenticate")],
-    force: Annotated[bool, typer.Option("--force", help="Skip token refresh and force full re-authentication flow")] = False,
+    force: Annotated[
+        bool, typer.Option("--force", help="Skip token refresh and force full re-authentication flow")
+    ] = False,
 ) -> None:
     """Re-authenticate an existing OAuth2 account.
 
@@ -178,7 +180,9 @@ def reauth_account(
             print_error(f"Failed to start OAuth2 flow: {e}")
             raise typer.Exit(1) from e
 
-        console.print(f"\nTo sign in, open: [bold blue]{flow.get('verification_uri', flow.get('verification_url', ''))}")
+        console.print(
+            f"\nTo sign in, open: [bold blue]{flow.get('verification_uri', flow.get('verification_url', ''))}"
+        )
         console.print(f"Enter code: [bold green]{flow['user_code']}[/bold green]")
         console.print("\nWaiting for authentication...")
 
@@ -236,7 +240,9 @@ def add_oauth2_account() -> None:
 
     defaults = PROVIDER_DEFAULTS[provider]
 
-    manager = get_token_manager(provider=provider, client_id=client_id, tenant_id=tenant_id or "common", client_secret=client_secret)
+    manager = get_token_manager(
+        provider=provider, client_id=client_id, tenant_id=tenant_id or "common", client_secret=client_secret
+    )
 
     if manager.uses_device_code_flow:
         # Device code flow (Microsoft): show code, wait for user
@@ -246,7 +252,9 @@ def add_oauth2_account() -> None:
             print_error(f"Failed to start OAuth2 flow: {e}")
             raise typer.Exit(1) from e
 
-        console.print(f"\nTo sign in, open: [bold blue]{flow.get('verification_uri', flow.get('verification_url', ''))}")
+        console.print(
+            f"\nTo sign in, open: [bold blue]{flow.get('verification_uri', flow.get('verification_url', ''))}"
+        )
         console.print(f"Enter code: [bold green]{flow['user_code']}[/bold green]")
         console.print("\nWaiting for authentication...")
 

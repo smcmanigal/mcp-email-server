@@ -8,7 +8,12 @@ from typing import ClassVar
 
 from mcp_email_server.log import logger
 
-DEFAULT_CONFIG_DIR = Path(os.getenv("MCP_EMAIL_SERVER_CONFIG_PATH", "~/.config/zerolib/mcp_email_server/config.toml")).expanduser().resolve().parent
+DEFAULT_CONFIG_DIR = (
+    Path(os.getenv("MCP_EMAIL_SERVER_CONFIG_PATH", "~/.config/zerolib/mcp_email_server/config.toml"))
+    .expanduser()
+    .resolve()
+    .parent
+)
 
 PROVIDER_DEFAULTS: dict[str, dict[str, str | int | bool]] = {
     "microsoft": {
@@ -140,9 +145,7 @@ class MSALTokenManager(OAuth2TokenManager):
     def get_access_token(self, email: str) -> str:
         accounts = self._app.get_accounts(username=email)
         if not accounts:
-            raise RuntimeError(
-                f"No cached credentials for {email}. Run OAuth2 setup first."
-            )
+            raise RuntimeError(f"No cached credentials for {email}. Run OAuth2 setup first.")
 
         result = self._app.acquire_token_silent(self.scopes, account=accounts[0])
         self._save_cache()
@@ -244,9 +247,7 @@ class GoogleTokenManager(OAuth2TokenManager):
 
         credentials = self._load_credentials(email)
         if credentials is None:
-            raise RuntimeError(
-                f"No cached credentials for {email}. Run OAuth2 setup first."
-            )
+            raise RuntimeError(f"No cached credentials for {email}. Run OAuth2 setup first.")
 
         if credentials.expired and credentials.refresh_token:
             credentials.refresh(google.auth.transport.requests.Request())
@@ -264,9 +265,7 @@ class GoogleTokenManager(OAuth2TokenManager):
         )
 
     def complete_device_code_flow(self, flow: dict) -> dict:
-        raise RuntimeError(
-            "Google does not support device code flow. Use run_auth_flow() instead."
-        )
+        raise RuntimeError("Google does not support device code flow. Use run_auth_flow() instead.")
 
     def run_auth_flow(self, email: str) -> dict:
         """Run authorization code flow with localhost redirect. Opens a browser window."""

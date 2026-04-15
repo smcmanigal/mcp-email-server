@@ -60,20 +60,24 @@ mcp-email-server folders create -a "Account" "FolderName"                    # c
 The project is both an **MCP server** and a **CLI tool** sharing the same core logic.
 
 ### Entry points
+
 - **MCP server**: `mcp_email_server/app.py` — defines all MCP tools using `FastMCP`. Each tool calls `dispatch_handler(account_name)` to get an `EmailHandler`, then delegates.
 - **CLI**: `mcp_email_server/cli/__init__.py` — Typer app that registers sub-apps (`accounts`, `emails`, `folders`, `flags`, `rules`) and top-level commands (`stdio`, `sse`, `streamable-http`, `ui`, `reset`). The CLI sub-commands in `cli/emails.py`, etc. call the same underlying handler methods.
 
 ### Handler abstraction
+
 - `mcp_email_server/emails/__init__.py` — abstract base class `EmailHandler` defining the contract for all email operations.
 - `mcp_email_server/emails/classic.py` — `ClassicEmailHandler`: the only concrete implementation, using `aioimaplib` (IMAP) and `aiosmtplib` (SMTP).
 - `mcp_email_server/emails/dispatcher.py` — `dispatch_handler(account_name)` looks up the account in settings and returns the appropriate handler. Currently only `EmailSettings` → `ClassicEmailHandler` is implemented; `ProviderSettings` raises `NotImplementedError`.
 
 ### Configuration
+
 - `mcp_email_server/config.py` — Pydantic/pydantic-settings models. Config is stored as TOML at `~/.config/zerolib/mcp_email_server/config.toml` (overridable via `MCP_EMAIL_SERVER_CONFIG_PATH`).
 - Environment variables (prefixed `MCP_EMAIL_SERVER_`) take precedence over TOML for account credentials. `Settings.__init__` merges env-sourced accounts at startup.
 - `get_settings()` is a module-level singleton; call `get_settings(reload=True)` to force a reload.
 
 ### OAuth2 / XOAUTH2 authentication
+
 - `mcp_email_server/oauth2.py` — Token managers for Microsoft 365 (MSAL) and Google. Abstract base `OAuth2TokenManager` with concrete `MSALTokenManager` and `GoogleTokenManager`. Factory: `get_token_manager(provider, client_id, ...)`. The `uses_device_code_flow` property distinguishes the two auth flow types.
 - **Config fields** on `EmailSettings`: `auth_type` (`"password"` or `"oauth2"`), `oauth2_provider` (`"microsoft"` or `"google"`), `oauth2_client_id`, `oauth2_tenant_id`, `oauth2_client_secret`.
 - **Auth helpers** in `classic.py`: `_imap_authenticate()` and `_smtp_authenticate()` dispatch between `imap.login()` / `smtp.login()` (password) and XOAUTH2 SASL (OAuth2). All 10 login call sites use these helpers.
@@ -89,6 +93,7 @@ The project is both an **MCP server** and a **CLI tool** sharing the same core l
 - **Cleanup**: `Settings.delete_email()` automatically removes cached OAuth2 tokens.
 
 ### Filter rules
+
 - `mcp_email_server/rules.py` — Pydantic models (`Rule`, `RuleFile`, `RuleApplyResult`), TOML file I/O, and `apply_rules()` orchestrator. CLI-only feature (no MCP tools).
 - `mcp_email_server/cli/rules.py` — Typer sub-app with `list`, `apply`, `add`, `delete` commands.
 - **Rule storage**: TOML files in `~/.config/zerolib/mcp_email_server/rules/` (one or more `*.toml` files, each containing `[[rules]]` entries).
@@ -101,6 +106,7 @@ The project is both an **MCP server** and a **CLI tool** sharing the same core l
 - **`--json`**: Machine-readable output for agent/script consumption (goes to stdout; log noise stays on stderr).
 
 ### Key design notes
+
 - Email IDs are IMAP UIDs (strings). Always obtain them from `list_emails_metadata` before calling content/delete/flag operations.
 - `delete_emails` is a **hard delete** (sets `\Deleted` flag + `EXPUNGE`) — not a move to Trash. When a user asks to "delete" emails, default to moving them to Trash (`emails move --target-folder Trash`) unless they explicitly request permanent deletion.
 - Mailbox names are always quoted via `_quote_mailbox()` for RFC 3501 compatibility with strict servers.
@@ -108,4 +114,5 @@ The project is both an **MCP server** and a **CLI tool** sharing the same core l
 - Attachment download is disabled by default; must be explicitly enabled via `enable_attachment_download = true` in config or env var.
 
 ## Linting
+
 Ruff is configured with line length 120, targeting Python 3.10+. `fix = true` auto-fixes on run.

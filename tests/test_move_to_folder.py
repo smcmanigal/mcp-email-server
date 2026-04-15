@@ -315,6 +315,4 @@ class TestClassicHandlerMoveEmails:
         )
 
         assert result == expected
-        classic_handler.incoming_client.move_emails_to_folder.assert_called_once_with(
-            ["100"], "Archive", "INBOX", True
-        )
+        classic_handler.incoming_client.move_emails_to_folder.assert_called_once_with(["100"], "Archive", "INBOX", True)

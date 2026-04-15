@@ -230,9 +230,7 @@ class TestEmailClient:
         }
 
         with patch.object(email_client, "imap_class", return_value=mock_imap):
-            with patch.object(
-                email_client, "_batch_fetch_headers", return_value=mock_metadata
-            ) as mock_fetch_headers:
+            with patch.object(email_client, "_batch_fetch_headers", return_value=mock_metadata) as mock_fetch_headers:
                 emails = []
                 async for email_data in email_client.get_emails_metadata_stream(page=1, page_size=10):
                     emails.append(email_data)

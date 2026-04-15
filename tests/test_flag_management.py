@@ -41,6 +41,7 @@ def classic_handler(email_settings):
 
 def _patch_imap_connection(handler, mock_imap):
     """Replace handler.imap_connection with a mock that yields mock_imap."""
+
     @asynccontextmanager
     async def _mock_conn(select_mailbox="INBOX"):
         yield mock_imap
@@ -118,9 +119,7 @@ class TestFlagManagement:
         try:
             result = await classic_handler.add_flags(["100", "101"], ["Seen", "Flagged"])
             assert result == {"100": True, "101": True}
-            mock_imap.uid.assert_called_once_with(
-                "store", "100,101", "+FLAGS", "(\\Seen \\Flagged)"
-            )
+            mock_imap.uid.assert_called_once_with("store", "100,101", "+FLAGS", "(\\Seen \\Flagged)")
         finally:
             classic_handler.imap_connection = original
 
@@ -136,9 +135,7 @@ class TestFlagManagement:
         try:
             result = await classic_handler.remove_flags(["200"], ["Seen"])
             assert result == {"200": True}
-            mock_imap.uid.assert_called_once_with(
-                "store", "200", "-FLAGS", "(\\Seen)"
-            )
+            mock_imap.uid.assert_called_once_with("store", "200", "-FLAGS", "(\\Seen)")
         finally:
             classic_handler.imap_connection = original
 
@@ -154,9 +151,7 @@ class TestFlagManagement:
         try:
             result = await classic_handler.replace_flags(["300"], ["Seen", "Answered"])
             assert result == {"300": True}
-            mock_imap.uid.assert_called_once_with(
-                "store", "300", "FLAGS", "(\\Seen \\Answered)"
-            )
+            mock_imap.uid.assert_called_once_with("store", "300", "FLAGS", "(\\Seen \\Answered)")
         finally:
             classic_handler.imap_connection = original
 
@@ -202,8 +197,6 @@ class TestFlagManagement:
         try:
             result = await classic_handler.add_flags(["100"], ["Seen"], silent=True)
             assert result == {"100": True}
-            mock_imap.uid.assert_called_once_with(
-                "store", "100", "+FLAGS.SILENT", "(\\Seen)"
-            )
+            mock_imap.uid.assert_called_once_with("store", "100", "+FLAGS.SILENT", "(\\Seen)")
         finally:
             classic_handler.imap_connection = original

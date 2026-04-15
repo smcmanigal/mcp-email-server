@@ -156,7 +156,9 @@ class TestOAuth2Config:
             full_name="OAuth2 User",
             email_address="user@outlook.com",
             incoming=EmailServer(user_name="user@outlook.com", host="outlook.office365.com", port=993),
-            outgoing=EmailServer(user_name="user@outlook.com", host="smtp.office365.com", port=587, use_ssl=False, start_ssl=True),
+            outgoing=EmailServer(
+                user_name="user@outlook.com", host="smtp.office365.com", port=587, use_ssl=False, start_ssl=True
+            ),
             auth_type="oauth2",
             oauth2_provider="microsoft",
             oauth2_client_id="test-client-id",

@@ -15,9 +15,10 @@ class TestMSALTokenManager:
         """Test successful token acquisition from cache."""
         cache_path = tmp_path / "token_cache.json"
 
-        with patch("msal.SerializableTokenCache") as mock_cache_cls, patch(
-            "msal.PublicClientApplication"
-        ) as mock_app_cls:
+        with (
+            patch("msal.SerializableTokenCache") as mock_cache_cls,
+            patch("msal.PublicClientApplication") as mock_app_cls,
+        ):
             mock_cache = MagicMock()
             mock_cache.has_state_changed = False
             mock_cache_cls.return_value = mock_cache
@@ -38,9 +39,10 @@ class TestMSALTokenManager:
         """Test RuntimeError when no cached credentials exist."""
         cache_path = tmp_path / "token_cache.json"
 
-        with patch("msal.SerializableTokenCache") as mock_cache_cls, patch(
-            "msal.PublicClientApplication"
-        ) as mock_app_cls:
+        with (
+            patch("msal.SerializableTokenCache") as mock_cache_cls,
+            patch("msal.PublicClientApplication") as mock_app_cls,
+        ):
             mock_cache = MagicMock()
             mock_cache.has_state_changed = False
             mock_cache_cls.return_value = mock_cache
@@ -58,9 +60,10 @@ class TestMSALTokenManager:
         """Test RuntimeError when token refresh fails."""
         cache_path = tmp_path / "token_cache.json"
 
-        with patch("msal.SerializableTokenCache") as mock_cache_cls, patch(
-            "msal.PublicClientApplication"
-        ) as mock_app_cls:
+        with (
+            patch("msal.SerializableTokenCache") as mock_cache_cls,
+            patch("msal.PublicClientApplication") as mock_app_cls,
+        ):
             mock_cache = MagicMock()
             mock_cache.has_state_changed = False
             mock_cache_cls.return_value = mock_cache
@@ -79,9 +82,10 @@ class TestMSALTokenManager:
         """Test successful device code flow initiation."""
         cache_path = tmp_path / "token_cache.json"
 
-        with patch("msal.SerializableTokenCache") as mock_cache_cls, patch(
-            "msal.PublicClientApplication"
-        ) as mock_app_cls:
+        with (
+            patch("msal.SerializableTokenCache") as mock_cache_cls,
+            patch("msal.PublicClientApplication") as mock_app_cls,
+        ):
             mock_cache = MagicMock()
             mock_cache.has_state_changed = False
             mock_cache_cls.return_value = mock_cache
@@ -103,9 +107,10 @@ class TestMSALTokenManager:
         """Test RuntimeError when device code flow fails."""
         cache_path = tmp_path / "token_cache.json"
 
-        with patch("msal.SerializableTokenCache") as mock_cache_cls, patch(
-            "msal.PublicClientApplication"
-        ) as mock_app_cls:
+        with (
+            patch("msal.SerializableTokenCache") as mock_cache_cls,
+            patch("msal.PublicClientApplication") as mock_app_cls,
+        ):
             mock_cache = MagicMock()
             mock_cache.has_state_changed = False
             mock_cache_cls.return_value = mock_cache
@@ -123,9 +128,10 @@ class TestMSALTokenManager:
         """Test successful device code flow completion."""
         cache_path = tmp_path / "token_cache.json"
 
-        with patch("msal.SerializableTokenCache") as mock_cache_cls, patch(
-            "msal.PublicClientApplication"
-        ) as mock_app_cls:
+        with (
+            patch("msal.SerializableTokenCache") as mock_cache_cls,
+            patch("msal.PublicClientApplication") as mock_app_cls,
+        ):
             mock_cache = MagicMock()
             mock_cache.has_state_changed = True
             mock_cache.serialize.return_value = "{}"
@@ -149,9 +155,10 @@ class TestMSALTokenManager:
         """Test successful account removal."""
         cache_path = tmp_path / "token_cache.json"
 
-        with patch("msal.SerializableTokenCache") as mock_cache_cls, patch(
-            "msal.PublicClientApplication"
-        ) as mock_app_cls:
+        with (
+            patch("msal.SerializableTokenCache") as mock_cache_cls,
+            patch("msal.PublicClientApplication") as mock_app_cls,
+        ):
             mock_cache = MagicMock()
             mock_cache.has_state_changed = True
             mock_cache.serialize.return_value = "{}"
@@ -172,9 +179,10 @@ class TestMSALTokenManager:
         """Test remove_account returns False when account doesn't exist."""
         cache_path = tmp_path / "token_cache.json"
 
-        with patch("msal.SerializableTokenCache") as mock_cache_cls, patch(
-            "msal.PublicClientApplication"
-        ) as mock_app_cls:
+        with (
+            patch("msal.SerializableTokenCache") as mock_cache_cls,
+            patch("msal.PublicClientApplication") as mock_app_cls,
+        ):
             mock_cache = MagicMock()
             mock_cache.has_state_changed = False
             mock_cache_cls.return_value = mock_cache
@@ -192,9 +200,10 @@ class TestMSALTokenManager:
         """Test that cache is persisted when state changes."""
         cache_path = tmp_path / "token_cache.json"
 
-        with patch("msal.SerializableTokenCache") as mock_cache_cls, patch(
-            "msal.PublicClientApplication"
-        ) as mock_app_cls:
+        with (
+            patch("msal.SerializableTokenCache") as mock_cache_cls,
+            patch("msal.PublicClientApplication") as mock_app_cls,
+        ):
             mock_cache = MagicMock()
             mock_cache.has_state_changed = True
             mock_cache.serialize.return_value = '{"cached": true}'
@@ -230,14 +239,16 @@ class TestGoogleTokenManager:
     def test_get_access_token_success(self, tmp_path):
         """Test successful token acquisition."""
         cache_path = tmp_path / "google_cache.json"
-        cache_path.write_text(json.dumps({
-            "user@gmail.com": {
-                "token": "valid_token",
-                "refresh_token": "refresh_tok",
-                "client_id": "cid",
-                "client_secret": "csec",
-            }
-        }))
+        cache_path.write_text(
+            json.dumps({
+                "user@gmail.com": {
+                    "token": "valid_token",
+                    "refresh_token": "refresh_tok",
+                    "client_id": "cid",
+                    "client_secret": "csec",
+                }
+            })
+        )
 
         with patch("google.oauth2.credentials.Credentials") as mock_creds_cls:
             mock_creds = MagicMock()
@@ -262,18 +273,21 @@ class TestGoogleTokenManager:
     def test_get_access_token_refresh(self, tmp_path):
         """Test token refresh when expired."""
         cache_path = tmp_path / "google_cache.json"
-        cache_path.write_text(json.dumps({
-            "user@gmail.com": {
-                "token": "expired_token",
-                "refresh_token": "refresh_tok",
-                "client_id": "cid",
-                "client_secret": "csec",
-            }
-        }))
+        cache_path.write_text(
+            json.dumps({
+                "user@gmail.com": {
+                    "token": "expired_token",
+                    "refresh_token": "refresh_tok",
+                    "client_id": "cid",
+                    "client_secret": "csec",
+                }
+            })
+        )
 
-        with patch("google.oauth2.credentials.Credentials") as mock_creds_cls, patch(
-            "google.auth.transport.requests.Request"
-        ) as mock_request_cls:
+        with (
+            patch("google.oauth2.credentials.Credentials") as mock_creds_cls,
+            patch("google.auth.transport.requests.Request") as mock_request_cls,
+        ):
             mock_creds = MagicMock()
             mock_creds.expired = True
             mock_creds.refresh_token = "refresh_tok"
@@ -328,18 +342,21 @@ class TestGoogleTokenManager:
     def test_refresh_access_token_success(self, tmp_path):
         """Test force-refresh using stored refresh token."""
         cache_path = tmp_path / "google_cache.json"
-        cache_path.write_text(json.dumps({
-            "user@gmail.com": {
-                "token": "old_token",
-                "refresh_token": "refresh_tok",
-                "client_id": "cid",
-                "client_secret": "csec",
-            }
-        }))
+        cache_path.write_text(
+            json.dumps({
+                "user@gmail.com": {
+                    "token": "old_token",
+                    "refresh_token": "refresh_tok",
+                    "client_id": "cid",
+                    "client_secret": "csec",
+                }
+            })
+        )
 
-        with patch("google.oauth2.credentials.Credentials") as mock_creds_cls, patch(
-            "google.auth.transport.requests.Request"
-        ) as mock_request_cls:
+        with (
+            patch("google.oauth2.credentials.Credentials") as mock_creds_cls,
+            patch("google.auth.transport.requests.Request") as mock_request_cls,
+        ):
             mock_creds = MagicMock()
             mock_creds.refresh_token = "refresh_tok"
             mock_creds.token = "refreshed_token"
@@ -365,14 +382,16 @@ class TestGoogleTokenManager:
     def test_refresh_access_token_no_refresh_token(self, tmp_path):
         """Test refresh_access_token raises when no refresh token is cached."""
         cache_path = tmp_path / "google_cache.json"
-        cache_path.write_text(json.dumps({
-            "user@gmail.com": {
-                "token": "old_token",
-                "refresh_token": None,
-                "client_id": "cid",
-                "client_secret": "csec",
-            }
-        }))
+        cache_path.write_text(
+            json.dumps({
+                "user@gmail.com": {
+                    "token": "old_token",
+                    "refresh_token": None,
+                    "client_id": "cid",
+                    "client_secret": "csec",
+                }
+            })
+        )
 
         with patch("google.oauth2.credentials.Credentials") as mock_creds_cls:
             mock_creds = MagicMock()
@@ -387,10 +406,12 @@ class TestGoogleTokenManager:
     def test_remove_account_success(self, tmp_path):
         """Test successful account removal."""
         cache_path = tmp_path / "google_cache.json"
-        cache_path.write_text(json.dumps({
-            "user@gmail.com": {"token": "tok", "refresh_token": "ref"},
-            "other@gmail.com": {"token": "tok2", "refresh_token": "ref2"},
-        }))
+        cache_path.write_text(
+            json.dumps({
+                "user@gmail.com": {"token": "tok", "refresh_token": "ref"},
+                "other@gmail.com": {"token": "tok2", "refresh_token": "ref2"},
+            })
+        )
 
         manager = GoogleTokenManager(client_id="cid", client_secret="csec", cache_path=cache_path)
         result = manager.remove_account("user@gmail.com")

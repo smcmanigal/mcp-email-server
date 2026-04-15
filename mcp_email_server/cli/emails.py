@@ -36,17 +36,19 @@ def list_emails(
     """List email metadata (paginated)."""
     try:
         handler = dispatch_handler(account)
-        result = asyncio.run(handler.get_emails_metadata(
-            page=page,
-            page_size=page_size,
-            before=before,
-            since=since,
-            subject=subject,
-            from_address=from_address,
-            mailbox=mailbox,
-            seen=seen,
-            flagged=flagged,
-        ))
+        result = asyncio.run(
+            handler.get_emails_metadata(
+                page=page,
+                page_size=page_size,
+                before=before,
+                since=since,
+                subject=subject,
+                from_address=from_address,
+                mailbox=mailbox,
+                seen=seen,
+                flagged=flagged,
+            )
+        )
         if json_output:
             print_json(result)
         else:
@@ -104,16 +106,18 @@ def send_email(
             body = sys.stdin.read()
 
         handler = dispatch_handler(account)
-        asyncio.run(handler.send_email(
-            recipients=to,
-            subject=subject,
-            body=body,
-            cc=cc,
-            bcc=bcc,
-            html=html,
-            attachments=attachment,
-            in_reply_to=reply_to,
-        ))
+        asyncio.run(
+            handler.send_email(
+                recipients=to,
+                subject=subject,
+                body=body,
+                cc=cc,
+                bcc=bcc,
+                html=html,
+                attachments=attachment,
+                in_reply_to=reply_to,
+            )
+        )
         recipient_str = ", ".join(to)
         attachment_info = f" with {len(attachment)} attachment(s)" if attachment else ""
         print_success(f"Email sent to {recipient_str}{attachment_info}")
@@ -153,12 +157,14 @@ def move_emails(
     """Move emails to a folder."""
     try:
         handler = dispatch_handler(account)
-        result = asyncio.run(handler.move_emails_to_folder(
-            email_ids=email_ids,
-            target_folder=target_folder,
-            source_mailbox=source_mailbox,
-            create_if_missing=create,
-        ))
+        result = asyncio.run(
+            handler.move_emails_to_folder(
+                email_ids=email_ids,
+                target_folder=target_folder,
+                source_mailbox=source_mailbox,
+                create_if_missing=create,
+            )
+        )
         print_success(f"Moved {len(result['moved'])} email(s) to {target_folder}")
         if result["failed"]:
             print_error(f"Failed to move: {', '.join(result['failed'])}")
@@ -210,14 +216,18 @@ def save_email(
     """Save an email to a file."""
     try:
         handler = dispatch_handler(account)
-        result = asyncio.run(handler.save_email_to_file(
-            email_id=email_id,
-            file_path=file_path,
-            output_format=output_format,
-            include_headers=headers,
-            mailbox=mailbox,
-        ))
-        print_success(f"Saved email {result.email_id} to {result.file_path} ({result.content_length} chars, {result.output_format})")
+        result = asyncio.run(
+            handler.save_email_to_file(
+                email_id=email_id,
+                file_path=file_path,
+                output_format=output_format,
+                include_headers=headers,
+                mailbox=mailbox,
+            )
+        )
+        print_success(
+            f"Saved email {result.email_id} to {result.file_path} ({result.content_length} chars, {result.output_format})"
+        )
     except Exception as e:
         print_error(str(e))
         raise typer.Exit(1) from None

@@ -16,6 +16,7 @@ def print_json(data: Any) -> None:
         console.print_json(data.model_dump_json())
     else:
         import json
+
         console.print_json(json.dumps(data, default=str))
 
 
@@ -54,11 +55,13 @@ def print_email_content(email: dict) -> None:
     if email.get("attachments"):
         header += f"[cyan]Attachments:[/cyan] {', '.join(email['attachments'])}\n"
 
-    console.print(Panel(
-        header + "\n" + str(email.get("body", "")),
-        title=f"[bold]{email.get('subject', 'No Subject')}[/bold]",
-        subtitle=f"ID: {email.get('email_id', '')}",
-    ))
+    console.print(
+        Panel(
+            header + "\n" + str(email.get("body", "")),
+            title=f"[bold]{email.get('subject', 'No Subject')}[/bold]",
+            subtitle=f"ID: {email.get('email_id', '')}",
+        )
+    )
 
 
 def print_success(message: str) -> None:

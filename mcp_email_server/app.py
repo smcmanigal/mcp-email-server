@@ -395,7 +395,9 @@ async def initiate_oauth2_setup(
 
     # Clean up expired flows
     now = time.time()
-    expired = [k for k, v in _pending_oauth2_flows.items() if now - v.get("created_at", 0) > _OAUTH2_FLOW_EXPIRY_SECONDS]
+    expired = [
+        k for k, v in _pending_oauth2_flows.items() if now - v.get("created_at", 0) > _OAUTH2_FLOW_EXPIRY_SECONDS
+    ]
     for k in expired:
         del _pending_oauth2_flows[k]
 
@@ -427,7 +429,9 @@ async def initiate_oauth2_setup(
         return {
             "verification_uri": flow.get("verification_uri", flow.get("verification_url", "")),
             "user_code": flow["user_code"],
-            "message": flow.get("message", f"Go to {flow.get('verification_uri', '')} and enter code {flow['user_code']}"),
+            "message": flow.get(
+                "message", f"Go to {flow.get('verification_uri', '')} and enter code {flow['user_code']}"
+            ),
         }
     else:
         # Google: single-step browser redirect flow
@@ -538,7 +542,9 @@ async def reauth_oauth2_account(
 
     # Clean up expired flows
     now = time.time()
-    expired = [k for k, v in _pending_oauth2_flows.items() if now - v.get("created_at", 0) > _OAUTH2_FLOW_EXPIRY_SECONDS]
+    expired = [
+        k for k, v in _pending_oauth2_flows.items() if now - v.get("created_at", 0) > _OAUTH2_FLOW_EXPIRY_SECONDS
+    ]
     for k in expired:
         del _pending_oauth2_flows[k]
 
@@ -556,7 +562,9 @@ async def reauth_oauth2_account(
         return {
             "verification_uri": flow.get("verification_uri", flow.get("verification_url", "")),
             "user_code": flow["user_code"],
-            "message": flow.get("message", f"Go to {flow.get('verification_uri', '')} and enter code {flow['user_code']}"),
+            "message": flow.get(
+                "message", f"Go to {flow.get('verification_uri', '')} and enter code {flow['user_code']}"
+            ),
         }
     else:
         try:
