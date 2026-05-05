@@ -95,6 +95,9 @@ class EmailSettings(AccountAttributes):
     oauth2_client_id: str | None = None
     oauth2_tenant_id: str | None = None  # Microsoft only, defaults to "common"
     oauth2_client_secret: str | None = None  # Google requires this for device code flow
+    # Max OR-tree depth per IMAP search query for filter rules. M365 silently fails (returns NO/BAD or
+    # empty results) when the OR tree exceeds ~10 operands; lower this for stricter servers.
+    search_chunk_size: int = 10
 
     @classmethod
     def init(
@@ -125,6 +128,7 @@ class EmailSettings(AccountAttributes):
         oauth2_client_id: str | None = None,
         oauth2_tenant_id: str | None = None,
         oauth2_client_secret: str | None = None,
+        search_chunk_size: int = 10,
     ) -> EmailSettings:
         return cls(
             account_name=account_name,
@@ -154,6 +158,7 @@ class EmailSettings(AccountAttributes):
             oauth2_client_id=oauth2_client_id,
             oauth2_tenant_id=oauth2_tenant_id,
             oauth2_client_secret=oauth2_client_secret,
+            search_chunk_size=search_chunk_size,
         )
 
     @classmethod
@@ -225,6 +230,7 @@ class EmailSettings(AccountAttributes):
                 oauth2_client_id=os.getenv("MCP_EMAIL_SERVER_OAUTH2_CLIENT_ID"),
                 oauth2_tenant_id=os.getenv("MCP_EMAIL_SERVER_OAUTH2_TENANT_ID"),
                 oauth2_client_secret=os.getenv("MCP_EMAIL_SERVER_OAUTH2_CLIENT_SECRET"),
+                search_chunk_size=int(os.getenv("MCP_EMAIL_SERVER_SEARCH_CHUNK_SIZE", "10")),
             )
         except (ValueError, TypeError) as e:
             logger.error(f"Failed to create email settings from environment variables: {e}")

@@ -183,6 +183,7 @@ class EmailClient:
         oauth2_client_id: str | None = None,
         oauth2_tenant_id: str | None = None,
         oauth2_client_secret: str | None = None,
+        search_chunk_size: int = 10,
     ):
         self.email_server = email_server
         self.sender = sender or email_server.user_name
@@ -192,6 +193,7 @@ class EmailClient:
         self.oauth2_client_id = oauth2_client_id
         self.oauth2_tenant_id = oauth2_tenant_id
         self.oauth2_client_secret = oauth2_client_secret
+        self.search_chunk_size = search_chunk_size
 
         self.imap_class = aioimaplib.IMAP4_SSL if self.email_server.use_ssl else aioimaplib.IMAP4
 
@@ -1240,11 +1242,14 @@ class EmailClient:
         return result
 
     async def _search_by_field(
-        self, imap, field: str, values: list[str], since: datetime | None, chunk_size: int = 25
+        self, imap, field: str, values: list[str], since: datetime | None, chunk_size: int | None = None
     ) -> list[str]:
         """Search for emails matching field values using batched OR queries, returning sorted UIDs."""
         if not values:
             return []
+
+        if chunk_size is None:
+            chunk_size = self.search_chunk_size
 
         date_criteria = []
         if since:
@@ -1256,7 +1261,13 @@ class EmailClient:
             or_criteria = self._build_or_criteria(field, chunk)
             search_criteria = date_criteria + or_criteria
             result, messages = await imap.uid_search(*search_criteria, charset=None)
-            if result == "OK" and messages and messages[0]:
+            if result != "OK":
+                logger.warning(
+                    f"IMAP search returned {result!r} for {field} chunk of {len(chunk)} values "
+                    f"(server response: {messages!r}). Try lowering search_chunk_size for this account."
+                )
+                continue
+            if messages and messages[0]:
                 for uid in messages[0].split():
                     all_uids.add(uid.decode() if isinstance(uid, bytes) else uid)
         return sorted(all_uids, key=lambda uid: int(uid))
@@ -1459,6 +1470,7 @@ class ClassicEmailHandler(EmailHandler):
             "oauth2_client_id": email_settings.oauth2_client_id,
             "oauth2_tenant_id": email_settings.oauth2_tenant_id,
             "oauth2_client_secret": email_settings.oauth2_client_secret,
+            "search_chunk_size": email_settings.search_chunk_size,
         }
         self.incoming_client = EmailClient(email_settings.incoming, **oauth2_kwargs)
         self.outgoing_client = EmailClient(

@@ -597,6 +597,42 @@ class TestSearchByFieldChunking:
         assert "SUBJECT" in call_args
         assert "OR" in call_args
 
+    @pytest.mark.asyncio
+    async def test_search_chunk_size_from_email_client(self, email_settings):
+        """When chunk_size is not passed, _search_by_field uses self.search_chunk_size."""
+        client = EmailClient(email_settings.incoming, search_chunk_size=2)
+        mock_imap = _make_mock_imap()
+        mock_imap.uid_search.side_effect = [("OK", [b"1"]), ("OK", [b"2"]), ("OK", [b"3"])]
+
+        result = await client._search_by_field(mock_imap, "SUBJECT", ["a", "b", "c", "d", "e"], since=None)
+
+        # 5 values / chunk_size=2 → 3 chunks
+        assert mock_imap.uid_search.call_count == 3
+        assert result == ["1", "2", "3"]
+
+    @pytest.mark.asyncio
+    async def test_non_ok_response_logs_warning_and_continues(self, email_client):
+        """A non-OK IMAP response is logged as a warning rather than silently swallowed."""
+        from mcp_email_server.log import logger as loguru_logger
+
+        mock_imap = _make_mock_imap()
+        # First chunk returns NO (M365 silent failure pattern), second returns OK
+        mock_imap.uid_search.side_effect = [
+            ("NO", [b"BAD command syntax"]),
+            ("OK", [b"42"]),
+        ]
+
+        captured: list[str] = []
+        sink_id = loguru_logger.add(lambda msg: captured.append(str(msg)), level="WARNING")
+        try:
+            result = await email_client._search_by_field(mock_imap, "SUBJECT", ["a", "b"], since=None, chunk_size=1)
+        finally:
+            loguru_logger.remove(sink_id)
+
+        # Continued past the failed chunk and got the OK chunk's result
+        assert result == ["42"]
+        assert any("'NO'" in msg and "search_chunk_size" in msg for msg in captured)
+
 
 class TestBatchMoveUids:
     @pytest.mark.asyncio

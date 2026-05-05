@@ -58,6 +58,28 @@ def test_api_key_is_secret_type():
     assert provider.api_key.get_secret_value() == "sk-123"
 
 
+def test_search_chunk_size_default_and_override():
+    """search_chunk_size defaults to 10 and can be overridden per-account."""
+    default_settings = EmailSettings(
+        account_name="default_account",
+        full_name="Test",
+        email_address="t@example.com",
+        incoming=EmailServer(user_name="u", password="p", host="imap.example.com", port=993),
+        outgoing=EmailServer(user_name="u", password="p", host="smtp.example.com", port=465),
+    )
+    assert default_settings.search_chunk_size == 10
+
+    custom_settings = EmailSettings(
+        account_name="strict_account",
+        full_name="Test",
+        email_address="t@example.com",
+        incoming=EmailServer(user_name="u", password="p", host="imap.example.com", port=993),
+        outgoing=EmailServer(user_name="u", password="p", host="smtp.example.com", port=465),
+        search_chunk_size=3,
+    )
+    assert custom_settings.search_chunk_size == 3
+
+
 def test_config():
     settings = get_settings()
     assert settings.emails == []
