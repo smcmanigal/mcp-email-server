@@ -560,6 +560,7 @@ To: recipient@example.com, other@example.com
 Cc: cc@example.com
 Subject: Test Subject
 Date: Mon, 1 Jan 2024 12:00:00 +0000
+Message-ID: <abc123@example.com>
 
 """
         result = email_client._parse_headers("123", raw_headers)
@@ -570,6 +571,7 @@ Date: Mon, 1 Jan 2024 12:00:00 +0000
         assert "recipient@example.com" in result["to"]
         assert "cc@example.com" in result["to"]
         assert result["attachments"] == []
+        assert result["message_id"] == "<abc123@example.com>"
 
     def test_parse_headers_handles_missing_fields(self, email_client):
         """Test that _parse_headers handles emails with missing headers."""
@@ -582,6 +584,7 @@ Date: Mon, 1 Jan 2024 12:00:00 +0000
         assert result["subject"] == "Minimal Email"
         assert result["from"] == ""
         assert result["to"] == []
+        assert result["message_id"] is None
 
 
 class TestBatchFetchDates:

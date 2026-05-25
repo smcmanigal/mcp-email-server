@@ -389,12 +389,16 @@ class EmailClient:
             subject = email_message.get("Subject", "")
             sender = email_message.get("From", "")
             date_str = email_message.get("Date", "")
+            # Expose Message-ID for reply threading / de-duplication (full-body parse
+            # already sets this in _parse_email_data; mirror it on the header path).
+            message_id = email_message.get("Message-ID")
 
             to_addresses = self._parse_recipients(email_message)
             date = self._parse_date(date_str)
 
             return {
                 "email_id": email_id,
+                "message_id": message_id,
                 "subject": subject,
                 "from": sender,
                 "to": to_addresses,
