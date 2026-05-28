@@ -1,6 +1,6 @@
 [project]
 name = "mcp-email-server"
-version = "0.0.1"
+version = "0.0.2"
 description = "IMAP and SMTP via MCP Server"
 authors = [{ name = "ai-zerolab", email = "jizhongsheng957@gmail.com" }]
 readme = "README.md"

@@ -235,11 +235,17 @@ The `mcp-email-server` command provides a full-featured CLI for managing emails 
 # Install globally (editable, for development)
 uv tool install -e .
 
-# Or install from PyPI
-uv tool install mcp-email-server
+# Or install from this fork
+uv tool install git+https://github.com/smcmanigal/mcp-email-server.git
 ```
 
 After installation, `mcp-email-server` is available as a global command.
+
+> **Note:** An editable install (`-e .`) keeps the *source* live, but the
+> dependency set is resolved once at install time. After adding/changing
+> dependencies in `pyproject.toml`, refresh the tool's environment with
+> `uv tool upgrade mcp-email-server` (source edits are picked up live;
+> dependency changes are not).
 
 ### Account Management
 
