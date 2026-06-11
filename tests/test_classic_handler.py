@@ -496,7 +496,7 @@ class TestImapConnectionContextManager:
         mock._client_task = asyncio.Future()
         mock._client_task.set_result(None)
         mock.wait_hello_from_server = AsyncMock()
-        mock.login = AsyncMock()
+        mock.login = AsyncMock(return_value=MagicMock(result="OK", lines=[]))
         mock_select_result = MagicMock()
         mock_select_result.result = "OK"
         mock.select = AsyncMock(return_value=mock_select_result)

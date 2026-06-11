@@ -31,6 +31,7 @@ class TestImapAuthenticate:
     async def test_password_auth(self):
         """Test password auth calls imap.login."""
         imap = AsyncMock()
+        imap.login.return_value = MagicMock(result="OK", lines=[])
         server = EmailServer(user_name="user", password="pass123", host="imap.example.com", port=993)
 
         await _imap_authenticate(imap, server, auth_type="password")
@@ -42,11 +43,28 @@ class TestImapAuthenticate:
     async def test_password_auth_default(self):
         """Test that default auth_type is password."""
         imap = AsyncMock()
+        imap.login.return_value = MagicMock(result="OK", lines=[])
         server = EmailServer(user_name="user", password="pass", host="imap.example.com", port=993)
 
         await _imap_authenticate(imap, server)
 
         imap.login.assert_awaited_once_with("user", "pass")
+
+    @pytest.mark.asyncio
+    async def test_password_auth_failure_raises(self):
+        """A NO/BAD LOGIN response must raise, not be silently ignored.
+
+        Regression test (ported from upstream #163): aioimaplib's login()
+        returns a Response but never raises on NO/BAD, so an unchecked result
+        let callers proceed to SELECT/FETCH on a NONAUTH connection, producing
+        "command SELECT illegal in state NONAUTH" instead of the real error.
+        """
+        imap = AsyncMock()
+        imap.login.return_value = MagicMock(result="NO", lines=[b"[AUTHENTICATIONFAILED] Invalid credentials"])
+        server = EmailServer(user_name="user", password="badpass", host="imap.example.com", port=993)
+
+        with pytest.raises(ConnectionError, match=r"IMAP login failed for 'user': NO.*Invalid credentials"):
+            await _imap_authenticate(imap, server, auth_type="password")
 
     @pytest.mark.asyncio
     async def test_oauth2_auth(self):

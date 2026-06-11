@@ -140,7 +140,22 @@ async def _imap_authenticate(
         if hasattr(response, "result") and response.result != "OK":
             raise RuntimeError(f"IMAP XOAUTH2 authentication failed: {response}")
     else:
-        await imap.login(email_server.user_name, email_server.password.get_secret_value())
+        # aioimaplib's login() returns a Response with .result of "OK"/"NO"/"BAD"
+        # but never raises on NO/BAD. Unchecked, the caller proceeds to issue
+        # SELECT/FETCH on a NONAUTH connection, producing the misleading error
+        # "command SELECT illegal in state NONAUTH" — and retries re-attempt
+        # LOGIN on fresh connections, amplifying lock-outs on servers that
+        # rate-limit failed logins (e.g. Proton Mail Bridge).
+        response = await imap.login(email_server.user_name, email_server.password.get_secret_value())
+        if response.result != "OK":
+            detail = " ".join(
+                line.decode("utf-8", errors="replace") if isinstance(line, bytes) else str(line)
+                for line in (response.lines or [])
+            ).strip()
+            raise ConnectionError(
+                f"IMAP login failed for {email_server.user_name!r}: {response.result}"
+                + (f" ({detail})" if detail else "")
+            )
 
 
 async def _smtp_authenticate(
@@ -1119,6 +1134,10 @@ class EmailClient:
             logger.warning("Could not find a valid Sent folder to save the message")
             return False
 
+        except ConnectionError:
+            # Login failures must reach the caller (send_email logs them with
+            # the real cause) rather than hide behind a generic save error.
+            raise
         except Exception as e:
             logger.error(f"Error saving to Sent folder: {type(e).__name__}: {e!r}")
             return False

@@ -46,7 +46,7 @@ def _create_mock_imap():
     mock_imap = AsyncMock()
     mock_imap._client_task = _make_awaitable()
     mock_imap.wait_hello_from_server = AsyncMock()
-    mock_imap.login = AsyncMock()
+    mock_imap.login = AsyncMock(return_value=MagicMock(result="OK", lines=[]))
     mock_imap.select = AsyncMock()
     mock_imap.logout = AsyncMock()
     return mock_imap
