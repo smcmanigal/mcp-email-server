@@ -129,6 +129,7 @@ class TestSmtpAuthenticate:
     async def test_oauth2_auth(self):
         """Test OAuth2 auth sends AUTH XOAUTH2 via execute_command."""
         smtp = AsyncMock()
+        smtp.execute_command.return_value = (235, b"2.7.0 Authentication successful")
         server = EmailServer(user_name="user@example.com", host="smtp.office365.com", port=587)
 
         mock_manager = MagicMock()
@@ -146,6 +147,8 @@ class TestSmtpAuthenticate:
             )
 
         smtp.login.assert_not_awaited()
+        # EHLO must precede the raw AUTH command (ESMTP state is reset by STARTTLS).
+        smtp.ehlo.assert_awaited_once()
         smtp.execute_command.assert_awaited_once()
 
         # Verify the AUTH XOAUTH2 command
@@ -164,6 +167,7 @@ class TestSmtpAuthenticate:
     async def test_oauth2_google_auth(self):
         """Test OAuth2 auth with Google provider passes client_secret."""
         smtp = AsyncMock()
+        smtp.execute_command.return_value = (235, b"2.7.0 Authentication successful")
         server = EmailServer(user_name="user@gmail.com", host="smtp.gmail.com", port=587)
 
         mock_manager = MagicMock()
@@ -187,3 +191,30 @@ class TestSmtpAuthenticate:
             tenant_id="common",
             client_secret="google_secret",
         )
+
+    @pytest.mark.asyncio
+    async def test_oauth2_auth_failure_raises(self):
+        """A non-235 AUTH response must raise, not be silently swallowed.
+
+        Regression test: previously the AUTH response was ignored, so a failed
+        SMTP auth surfaced later as a generic "530 Client not authenticated"
+        at send time instead of at the auth layer.
+        """
+        smtp = AsyncMock()
+        smtp.execute_command.return_value = (535, b"5.7.3 Authentication unsuccessful")
+        server = EmailServer(user_name="user@example.com", host="smtp.office365.com", port=587)
+
+        mock_manager = MagicMock()
+        mock_manager.get_access_token.return_value = "bad_token"
+
+        with patch("mcp_email_server.oauth2.get_token_manager", return_value=mock_manager):
+            with pytest.raises(RuntimeError, match="SMTP XOAUTH2 authentication failed"):
+                await _smtp_authenticate(
+                    smtp,
+                    server,
+                    auth_type="oauth2",
+                    email_address="user@example.com",
+                    oauth2_provider="microsoft",
+                    oauth2_client_id="client123",
+                    oauth2_tenant_id="tenant456",
+                )

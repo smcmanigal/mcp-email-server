@@ -167,7 +167,17 @@ async def _smtp_authenticate(
         auth_string = _build_xoauth2_string(email_address, access_token)
         # Base64-encode the SASL string; execute_command expects bytes args
         auth_b64 = base64.b64encode(auth_string.encode())
-        await smtp.execute_command(b"AUTH", b"XOAUTH2", auth_b64)
+        # EHLO must precede the raw AUTH command. After STARTTLS the ESMTP
+        # session is reset, and execute_command() (unlike smtp.login()) does
+        # not auto-EHLO, so the server otherwise rejects AUTH with
+        # "503 send hello first". That status is returned, not raised, so we
+        # also check the AUTH response here — failures must surface at the
+        # auth layer rather than later as a generic "530 Client not
+        # authenticated" at send time.
+        await smtp.ehlo()
+        code, message = await smtp.execute_command(b"AUTH", b"XOAUTH2", auth_b64)
+        if code != 235:
+            raise RuntimeError(f"SMTP XOAUTH2 authentication failed: {code} {message}")
     else:
         await smtp.login(email_server.user_name, email_server.password.get_secret_value())
 
