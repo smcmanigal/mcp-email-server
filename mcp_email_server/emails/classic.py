@@ -5,6 +5,7 @@ import mimetypes
 import re
 import ssl
 import time
+import unicodedata
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -778,6 +779,18 @@ class EmailClient:
             except Exception as e:
                 logger.info(f"Error during logout: {e}")
 
+    @staticmethod
+    def _normalize_attachment_name(name: str) -> str:
+        """Normalize attachment filenames for robust MIME round-trip matching.
+
+        Unicode allows two byte representations of accented characters: NFC
+        (single codepoint) and NFD (base char + combining mark). macOS mail
+        clients typically emit NFD in MIME headers while keyboards and most
+        other systems produce NFC — the strings display identically but fail
+        an exact ``==`` comparison.
+        """
+        return unicodedata.normalize("NFC", name)
+
     async def download_attachment(
         self,
         email_id: str,
@@ -832,11 +845,14 @@ class EmailClient:
             # Find the attachment
             attachment_data = None
             mime_type = None
+            normalized_attachment_name = self._normalize_attachment_name(attachment_name)
 
             if email_message.is_multipart():
                 for part in email_message.walk():
                     filename = part.get_filename()
-                    if filename and filename == attachment_name:
+                    if not isinstance(filename, str):
+                        continue
+                    if self._normalize_attachment_name(filename) == normalized_attachment_name:
                         attachment_data = part.get_payload(decode=True)
                         mime_type = part.get_content_type()
                         break

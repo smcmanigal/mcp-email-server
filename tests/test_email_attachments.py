@@ -298,3 +298,103 @@ class TestDownloadAttachmentMailboxParam:
 
                 # Verify select was called with quoted special folder
                 mock_imap.select.assert_called_once_with('"[Gmail]/Sent Mail"')
+
+
+class TestUnicodeAttachmentNameMatching:
+    """Tests for NFC normalization in download_attachment matching (upstream #168).
+
+    macOS mail clients typically emit NFD-encoded filenames in MIME headers
+    while keyboards and most other systems produce NFC. The forms display
+    identically but fail exact ``==`` comparison.
+    """
+
+    def test_normalize_attachment_name_bridges_nfc_nfd(self):
+        import unicodedata
+
+        nfc = "Análisis.xlsx"
+        nfd = unicodedata.normalize("NFD", nfc)
+        assert nfc != nfd  # sanity: the raw strings differ
+        assert EmailClient._normalize_attachment_name(nfc) == EmailClient._normalize_attachment_name(nfd)
+
+    @staticmethod
+    def _build_email_with_unicode_attachment(filename: str, payload: bytes = b"spreadsheet bytes") -> bytes:
+        from email.mime.application import MIMEApplication
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+
+        msg = MIMEMultipart("mixed")
+        msg["Subject"] = "Unicode filename"
+        msg["From"] = "sender@example.com"
+        msg["To"] = "recipient@example.com"
+        msg["Date"] = "Fri, 8 May 2026 19:17:09 +0200"
+        msg.attach(MIMEText("Please see attached spreadsheet.", "plain", "utf-8"))
+
+        part = MIMEApplication(payload, _subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        part.add_header("Content-Disposition", "attachment", filename=filename)
+        msg.attach(part)
+        return msg.as_bytes()
+
+    def test_parse_exposes_decoded_unicode_filename(self, email_client):
+        """Non-ASCII attachment filenames are listed as decoded strings."""
+        filename = "Actividades operacionales bienal MC rev 1 2 - con Análisis 1.xlsx"
+        raw_email = self._build_email_with_unicode_attachment(filename)
+
+        result = email_client._parse_email_data(raw_email, email_id="44")
+
+        assert result["attachments"] == [filename]
+
+    @pytest.mark.asyncio
+    async def test_download_with_nfd_request_name_succeeds(self, email_client, tmp_path):
+        """download_attachment matches when the requested name is NFD but the header is NFC."""
+        import asyncio
+        import unicodedata
+
+        filename = "Análisis 1.xlsx"
+        raw_email = self._build_email_with_unicode_attachment(filename)
+        save_path = tmp_path / "analysis.xlsx"
+
+        mock_imap = AsyncMock()
+        mock_imap._client_task = asyncio.Future()
+        mock_imap._client_task.set_result(None)
+        mock_imap.wait_hello_from_server = AsyncMock()
+        mock_imap.login = AsyncMock(return_value=MagicMock(result="OK", lines=[]))
+        mock_imap.select = AsyncMock(return_value=("OK", [b"1"]))
+        mock_imap.logout = AsyncMock()
+
+        fetch_data = [b"1 FETCH (BODY[] {%d}" % len(raw_email), bytearray(raw_email), b")"]
+        with patch.object(email_client, "_fetch_email_with_formats", return_value=fetch_data):
+            with patch.object(email_client, "imap_class", return_value=mock_imap):
+                result = await email_client.download_attachment(
+                    email_id="1",
+                    attachment_name=unicodedata.normalize("NFD", filename),
+                    save_path=str(save_path),
+                )
+
+        assert result["mime_type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        assert save_path.read_bytes() == b"spreadsheet bytes"
+
+    @pytest.mark.asyncio
+    async def test_download_unmatched_name_still_raises(self, email_client, tmp_path):
+        """Normalization must not loosen matching: different names still fail."""
+        import asyncio
+
+        raw_email = self._build_email_with_unicode_attachment("Análisis 1.xlsx")
+        save_path = tmp_path / "other.xlsx"
+
+        mock_imap = AsyncMock()
+        mock_imap._client_task = asyncio.Future()
+        mock_imap._client_task.set_result(None)
+        mock_imap.wait_hello_from_server = AsyncMock()
+        mock_imap.login = AsyncMock(return_value=MagicMock(result="OK", lines=[]))
+        mock_imap.select = AsyncMock(return_value=("OK", [b"1"]))
+        mock_imap.logout = AsyncMock()
+
+        fetch_data = [b"1 FETCH (BODY[] {%d}" % len(raw_email), bytearray(raw_email), b")"]
+        with patch.object(email_client, "_fetch_email_with_formats", return_value=fetch_data):
+            with patch.object(email_client, "imap_class", return_value=mock_imap):
+                with pytest.raises(ValueError, match="not found"):
+                    await email_client.download_attachment(
+                        email_id="1",
+                        attachment_name="Different.xlsx",
+                        save_path=str(save_path),
+                    )
