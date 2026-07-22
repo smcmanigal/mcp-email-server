@@ -35,7 +35,7 @@ def list_rules(
         else:
             print_rules_table(rules_by_file, RULES_DIR)
     except Exception as e:
-        print_error(str(e))
+        print_error(e)
         raise typer.Exit(1) from None
 
 
@@ -64,7 +64,7 @@ def apply_rules_cmd(
                 console.print("[yellow]Dry run mode — no emails were moved.[/yellow]")
             print_rules_results(results)
     except Exception as e:
-        print_error(str(e))
+        print_error(e)
         raise typer.Exit(1) from None
 
 
@@ -111,7 +111,7 @@ def add_rule_cmd(
     except typer.Exit:
         raise
     except Exception as e:
-        print_error(str(e))
+        print_error(e)
         raise typer.Exit(1) from None
 
 
@@ -133,5 +133,5 @@ def delete_rule_cmd(
     except typer.Exit:
         raise
     except Exception as e:
-        print_error(str(e))
+        print_error(e)
         raise typer.Exit(1) from None

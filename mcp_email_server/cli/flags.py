@@ -56,7 +56,7 @@ def add_flags(
     try:
         _run_flag_operation("add_flags", account, email_ids, flag, mailbox, silent, json_output)
     except Exception as e:
-        print_error(str(e))
+        print_error(e)
         raise typer.Exit(code=1) from None
 
 
@@ -73,7 +73,7 @@ def remove_flags(
     try:
         _run_flag_operation("remove_flags", account, email_ids, flag, mailbox, silent, json_output)
     except Exception as e:
-        print_error(str(e))
+        print_error(e)
         raise typer.Exit(code=1) from None
 
 
@@ -90,5 +90,5 @@ def replace_flags(
     try:
         _run_flag_operation("replace_flags", account, email_ids, flag, mailbox, silent, json_output)
     except Exception as e:
-        print_error(str(e))
+        print_error(e)
         raise typer.Exit(code=1) from None

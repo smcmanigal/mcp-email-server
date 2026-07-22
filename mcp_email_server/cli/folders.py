@@ -26,7 +26,7 @@ def list_folders(
         else:
             print_folders(result)
     except Exception as e:
-        print_error(str(e))
+        print_error(e)
         raise typer.Exit(code=1) from None
 
 
@@ -47,5 +47,5 @@ def create_folder(
     except typer.Exit:
         raise
     except Exception as e:
-        print_error(str(e))
+        print_error(e)
         raise typer.Exit(code=1) from None

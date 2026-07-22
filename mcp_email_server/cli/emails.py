@@ -57,7 +57,7 @@ def list_emails(
                 title=f"Emails in {mailbox} (page {result.page}/{max((result.total + page_size - 1) // page_size, 1)}, total: {result.total})",
             )
     except Exception as e:
-        print_error(str(e))
+        print_error(e)
         raise typer.Exit(1) from None
 
 
@@ -81,7 +81,7 @@ def read_emails(
             if result.failed_ids:
                 print_error(f"Failed to retrieve: {', '.join(result.failed_ids)}")
     except Exception as e:
-        print_error(str(e))
+        print_error(e)
         raise typer.Exit(1) from None
 
 
@@ -124,7 +124,7 @@ def send_email(
     except typer.Exit:
         raise
     except Exception as e:
-        print_error(str(e))
+        print_error(e)
         raise typer.Exit(1) from None
 
 
@@ -142,7 +142,7 @@ def delete_emails(
         if failed_ids:
             print_error(f"Failed to delete: {', '.join(failed_ids)}")
     except Exception as e:
-        print_error(str(e))
+        print_error(e)
         raise typer.Exit(1) from None
 
 
@@ -169,7 +169,7 @@ def move_emails(
         if result["failed"]:
             print_error(f"Failed to move: {', '.join(result['failed'])}")
     except Exception as e:
-        print_error(str(e))
+        print_error(e)
         raise typer.Exit(1) from None
 
 
@@ -200,7 +200,7 @@ def download_attachment(
     except typer.Exit:
         raise
     except Exception as e:
-        print_error(str(e))
+        print_error(e)
         raise typer.Exit(1) from None
 
 
@@ -229,5 +229,5 @@ def save_email(
             f"Saved email {result.email_id} to {result.file_path} ({result.content_length} chars, {result.output_format})"
         )
     except Exception as e:
-        print_error(str(e))
+        print_error(e)
         raise typer.Exit(1) from None

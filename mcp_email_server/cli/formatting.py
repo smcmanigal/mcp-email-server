@@ -68,7 +68,11 @@ def print_success(message: str) -> None:
     console.print(f"[green]{message}[/green]")
 
 
-def print_error(message: str) -> None:
+def print_error(message: str | BaseException) -> None:
+    if isinstance(message, BaseException):
+        # Some exceptions (e.g. TimeoutError) stringify to "", which would
+        # print a bare "Error: " — fall back to the exception type name.
+        message = str(message) or type(message).__name__
     console.print(f"[red]Error: {message}[/red]")
 
 
