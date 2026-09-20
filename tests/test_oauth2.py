@@ -302,6 +302,54 @@ class TestGoogleTokenManager:
             assert token == "new_token"
             mock_creds.refresh.assert_called_once_with(mock_request_cls.return_value)
 
+    def test_expiry_round_trips_through_cache(self, tmp_path):
+        """Expiry is persisted so a later process knows when the access token goes stale."""
+        from datetime import datetime, timedelta
+
+        from google.oauth2.credentials import Credentials
+
+        cache_path = tmp_path / "google_cache.json"
+        manager = GoogleTokenManager(client_id="cid", client_secret="csec", cache_path=cache_path)
+        expiry = datetime.utcnow().replace(microsecond=0) + timedelta(hours=1)
+        creds = Credentials(token="tok", refresh_token="rt", client_id="cid", client_secret="csec", expiry=expiry)
+
+        manager._save_credentials("user@gmail.com", creds)
+        loaded = manager._load_credentials("user@gmail.com")
+
+        assert json.loads(cache_path.read_text())["user@gmail.com"]["expiry"] == expiry.isoformat()
+        assert loaded.expiry == expiry
+        assert loaded.expired is False
+
+    def test_missing_expiry_forces_refresh(self, tmp_path):
+        """A cache entry with no expiry (written by older versions) is refreshed once and gains one."""
+        from datetime import datetime, timedelta
+
+        cache_path = tmp_path / "google_cache.json"
+        cache_path.write_text(
+            json.dumps({
+                "user@gmail.com": {
+                    "token": "stale_token",
+                    "refresh_token": "refresh_tok",
+                    "client_id": "cid",
+                    "client_secret": "csec",
+                }
+            })
+        )
+
+        def fake_refresh(self, request):
+            self.token = "fresh_token"
+            self.expiry = datetime.utcnow() + timedelta(hours=1)
+
+        with (
+            patch("google.oauth2.credentials.Credentials.refresh", fake_refresh),
+            patch("google.auth.transport.requests.Request"),
+        ):
+            manager = GoogleTokenManager(client_id="cid", client_secret="csec", cache_path=cache_path)
+            token = manager.get_access_token("user@gmail.com")
+
+        assert token == "fresh_token"
+        assert json.loads(cache_path.read_text())["user@gmail.com"]["expiry"] is not None
+
     def test_uses_device_code_flow_is_false(self, tmp_path):
         """Test that Google uses browser redirect, not device code flow."""
         manager = GoogleTokenManager(client_id="cid", client_secret="csec", cache_path=tmp_path / "cache.json")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import ClassVar
 
@@ -216,6 +217,15 @@ class GoogleTokenManager(OAuth2TokenManager):
         if not account_data:
             return None
 
+        # google-auth only knows a token is stale when it knows the expiry.
+        # Without it, Credentials.expired is always False and the ~1 h Google
+        # access token is reused until Gmail hangs the XOAUTH2 handshake.
+        expiry = None
+        if account_data.get("expiry"):
+            expiry = datetime.fromisoformat(account_data["expiry"])
+            if expiry.tzinfo is not None:
+                expiry = expiry.astimezone(timezone.utc).replace(tzinfo=None)
+
         return Credentials(
             token=account_data.get("token"),
             refresh_token=account_data.get("refresh_token"),
@@ -223,6 +233,7 @@ class GoogleTokenManager(OAuth2TokenManager):
             client_id=self.client_id,
             client_secret=self.client_secret,
             scopes=self.scopes,
+            expiry=expiry,
         )
 
     def _save_credentials(self, email: str, credentials) -> None:
@@ -236,6 +247,7 @@ class GoogleTokenManager(OAuth2TokenManager):
             "refresh_token": credentials.refresh_token,
             "client_id": credentials.client_id,
             "client_secret": credentials.client_secret,
+            "expiry": credentials.expiry.isoformat() if isinstance(credentials.expiry, datetime) else None,
         }
 
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -249,7 +261,9 @@ class GoogleTokenManager(OAuth2TokenManager):
         if credentials is None:
             raise RuntimeError(f"No cached credentials for {email}. Run OAuth2 setup first.")
 
-        if credentials.expired and credentials.refresh_token:
+        # An entry saved before expiry was recorded has no way to report itself
+        # as stale, so refresh it once; the save below records the expiry.
+        if (credentials.expiry is None or credentials.expired) and credentials.refresh_token:
             credentials.refresh(google.auth.transport.requests.Request())
             self._save_credentials(email, credentials)
 
