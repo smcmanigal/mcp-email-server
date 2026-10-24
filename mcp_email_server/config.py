@@ -241,6 +241,7 @@ class EmailSettings(AccountAttributes):
             update={
                 "incoming": self.incoming.masked(),
                 "outgoing": self.outgoing.masked(),
+                "oauth2_client_secret": "********" if self.oauth2_client_secret else None,
             }
         )
 

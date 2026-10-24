@@ -311,6 +311,36 @@ def test_email_settings_masked(monkeypatch):
     assert masked.email_address == "test@example.com"
 
 
+def test_email_settings_masked_hides_oauth2_client_secret(monkeypatch):
+    """list_available_accounts returns masked settings, so the OAuth2 client secret must not leak."""
+    monkeypatch.setenv("MCP_EMAIL_SERVER_EMAIL_ADDRESS", "test@example.com")
+    monkeypatch.setenv("MCP_EMAIL_SERVER_IMAP_HOST", "imap.test.com")
+    monkeypatch.setenv("MCP_EMAIL_SERVER_SMTP_HOST", "smtp.test.com")
+    monkeypatch.setenv("MCP_EMAIL_SERVER_AUTH_TYPE", "oauth2")
+    monkeypatch.setenv("MCP_EMAIL_SERVER_OAUTH2_PROVIDER", "google")
+    monkeypatch.setenv("MCP_EMAIL_SERVER_OAUTH2_CLIENT_ID", "client-id")
+    monkeypatch.setenv("MCP_EMAIL_SERVER_OAUTH2_CLIENT_SECRET", "GOCSPX-real-secret")
+
+    email = EmailSettings.from_env()
+    assert email is not None
+
+    masked = email.masked()
+    assert masked.oauth2_client_secret == "********"
+    assert "GOCSPX-real-secret" not in masked.model_dump_json()
+    assert email.oauth2_client_secret == "GOCSPX-real-secret"
+
+
+def test_email_settings_masked_keeps_absent_client_secret_none(monkeypatch):
+    monkeypatch.setenv("MCP_EMAIL_SERVER_EMAIL_ADDRESS", "test@example.com")
+    monkeypatch.setenv("MCP_EMAIL_SERVER_PASSWORD", "secret123")
+    monkeypatch.setenv("MCP_EMAIL_SERVER_IMAP_HOST", "imap.test.com")
+    monkeypatch.setenv("MCP_EMAIL_SERVER_SMTP_HOST", "smtp.test.com")
+
+    email = EmailSettings.from_env()
+    assert email is not None
+    assert email.masked().oauth2_client_secret is None
+
+
 def test_enable_attachment_download_from_env_true(monkeypatch, tmp_path):
     """Test enable_attachment_download can be set via environment variable."""
     config_file = tmp_path / "empty.toml"
