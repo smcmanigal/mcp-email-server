@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import email.utils
+import itertools
 import mimetypes
 import re
 import ssl
@@ -62,6 +63,7 @@ def _quote_search_param(param: str) -> str:
     return f'"{escaped}"'
 
 
+_FETCH_BODY_LITERAL = re.compile(rb"FETCH \(.*\b(?:RFC822|BODY\[\])\s*\{(\d+)\}\s*$", re.IGNORECASE)
 _SEARCH_COMPLETED_ONLY = re.compile(r"SEARCH completed \(took [0-9]+ ms\)", re.IGNORECASE)
 
 
@@ -801,8 +803,25 @@ class EmailClient:
             except Exception as e:
                 logger.info(f"Error during logout: {e}")
 
+    @staticmethod
+    def _find_literal_payload(data: list) -> bytes | None:
+        """Return the message literal that follows a 'FETCH (... BODY[] {n}' line, if any.
+
+        The {n} length identifies the payload exactly, so short messages are found too;
+        the size heuristics below remain as a fallback for servers that reply differently.
+        """
+        for item, payload in itertools.pairwise(data):
+            if not isinstance(item, bytes | bytearray) or not isinstance(payload, bytes | bytearray):
+                continue
+            match = _FETCH_BODY_LITERAL.search(bytes(item))
+            if match and int(match.group(1)) > 0 and len(payload) == int(match.group(1)):
+                return bytes(payload)
+        return None
+
     def _check_email_content(self, data: list) -> bool:
         """Check if the fetched data contains actual email content."""
+        if self._find_literal_payload(data) is not None:
+            return True
         for item in data:
             if isinstance(item, bytes) and b"FETCH (" in item and b"RFC822" not in item and b"BODY" not in item:
                 # This is just metadata, not actual content
@@ -814,6 +833,10 @@ class EmailClient:
 
     def _extract_raw_email(self, data: list) -> bytes | None:
         """Extract raw email bytes from IMAP response data."""
+        literal = self._find_literal_payload(data)
+        if literal is not None:
+            return literal
+
         # The email content is typically at index 1 as a bytearray
         if len(data) > 1 and isinstance(data[1], bytearray):
             return bytes(data[1])

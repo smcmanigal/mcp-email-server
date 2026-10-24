@@ -838,3 +838,27 @@ class TestFetchEmailWithFormats:
 
         assert data is not None
         assert [c.args[2] for c in imap.uid.call_args_list] == ["BODY.PEEK[]", "(BODY.PEEK[])", "BODY[]", "RFC822"]
+
+
+class TestShortMessageLiteral:
+    _SHORT = b"Subject: Hi\r\n\r\nShort body\r\n"  # well under the old 100-byte guess
+
+    def test_short_literal_is_content(self, email_client):
+        data = [f"1 FETCH (UID 7 BODY[] {{{len(self._SHORT)}}}".encode(), bytearray(self._SHORT), b")", b"OK done"]
+        assert email_client._check_email_content(data)
+        assert email_client._extract_raw_email(data) == self._SHORT
+
+    def test_rfc822_literal_is_content(self, email_client):
+        data = [f"1 FETCH (RFC822 {{{len(self._SHORT)}}} UID 7".encode(), bytes(self._SHORT), b")"]
+        # Literal marker must end the line; this one doesn't, so fall back to the size heuristic.
+        assert not email_client._check_email_content(data)
+        data = [f"1 FETCH (UID 7 RFC822 {{{len(self._SHORT)}}}".encode(), bytes(self._SHORT), b")"]
+        assert email_client._check_email_content(data)
+        assert email_client._extract_raw_email(data) == self._SHORT
+
+    def test_metadata_only_reply_is_not_content(self, email_client):
+        assert not email_client._check_email_content([b"1 FETCH (UID 7 FLAGS (\\Seen))", b"OK done"])
+
+    def test_length_mismatch_is_not_trusted(self, email_client):
+        data = [b"1 FETCH (UID 7 BODY[] {500}", bytearray(self._SHORT), b")"]
+        assert not email_client._check_email_content(data)
