@@ -41,6 +41,18 @@ from mcp_email_server.utils.html_converter import html_to_markdown
 MAX_BODY_LENGTH = 20000
 
 
+_IMAP_MONTHS = ("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")
+
+
+def _imap_search_date(value: datetime) -> str:
+    """Format a SEARCH date as DD-MON-YYYY (RFC 3501) with English month names.
+
+    strftime("%b") follows LC_TIME, so a non-English locale would produce month names
+    the server rejects.
+    """
+    return f"{value.day:02d}-{_IMAP_MONTHS[value.month - 1]}-{value.year:04d}"
+
+
 def _reject_unquotable(value: str, what: str) -> None:
     """Raise if value cannot appear in an IMAP quoted string (RFC 3501: no CR, LF or NUL).
 
@@ -584,9 +596,9 @@ class EmailClient:
     ) -> list[str]:
         search_criteria = []
         if before:
-            search_criteria.extend(["BEFORE", before.strftime("%d-%b-%Y").upper()])
+            search_criteria.extend(["BEFORE", _imap_search_date(before)])
         if since:
-            search_criteria.extend(["SINCE", since.strftime("%d-%b-%Y").upper()])
+            search_criteria.extend(["SINCE", _imap_search_date(since)])
         if subject:
             search_criteria.extend(["SUBJECT", _quote_search_param(subject)])
         if body:
@@ -1563,7 +1575,7 @@ class EmailClient:
 
         date_criteria = []
         if since:
-            date_criteria = ["SINCE", since.strftime("%d-%b-%Y").upper()]
+            date_criteria = ["SINCE", _imap_search_date(since)]
 
         all_uids: set[str] = set()
         for i in range(0, len(values), chunk_size):

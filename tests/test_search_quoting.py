@@ -63,3 +63,28 @@ class TestRejectLineBreaks:
 
         assert _quote_search_param("a\tb café") == '"a\tb café"'
         assert _quote_mailbox("[Gmail]/Sent Mail") == '"[Gmail]/Sent Mail"'
+
+
+class TestImapSearchDate:
+    def test_english_months_regardless_of_locale(self):
+        import locale
+        from datetime import datetime
+
+        from mcp_email_server.emails.classic import _imap_search_date
+
+        expected = [
+            f"05-{m}-2026" for m in ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+        ]
+        assert [_imap_search_date(datetime(2026, month, 5)) for month in range(1, 13)] == expected
+
+        original = locale.setlocale(locale.LC_TIME)
+        for name in ("de_DE.UTF-8", "fr_FR.UTF-8", "es_ES.UTF-8"):
+            try:
+                locale.setlocale(locale.LC_TIME, name)
+            except locale.Error:
+                continue
+            try:
+                assert _imap_search_date(datetime(2026, 3, 1)) == "01-MAR-2026"
+                assert _imap_search_date(datetime(2026, 12, 31)) == "31-DEC-2026"
+            finally:
+                locale.setlocale(locale.LC_TIME, original)
