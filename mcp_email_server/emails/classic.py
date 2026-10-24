@@ -41,6 +41,16 @@ from mcp_email_server.utils.html_converter import html_to_markdown
 MAX_BODY_LENGTH = 20000
 
 
+def _reject_unquotable(value: str, what: str) -> None:
+    """Raise if value cannot appear in an IMAP quoted string (RFC 3501: no CR, LF or NUL).
+
+    Quoting does not neutralise a line break: a CR/LF in a search value or mailbox name
+    from the caller would end the command and start a new one on the connection.
+    """
+    if any(ch in value for ch in "\r\n\0"):
+        raise ValueError(f"{what} must not contain line breaks or NUL characters: {value!r}")
+
+
 def _quote_mailbox(mailbox: str) -> str:
     """Quote mailbox name for IMAP compatibility.
 
@@ -55,12 +65,14 @@ def _quote_mailbox(mailbox: str) -> str:
     """
     # Per RFC 3501, literal double-quote characters in a quoted string must
     # be escaped with a backslash. Backslashes themselves must also be escaped.
+    _reject_unquotable(mailbox, "Mailbox name")
     escaped = mailbox.replace("\\", "\\\\").replace('"', r"\"")
     return f'"{escaped}"'
 
 
 def _quote_search_param(param: str) -> str:
     """Quote and escape IMAP search parameter per RFC 3501 Section 9."""
+    _reject_unquotable(param, "Search value")
     escaped = param.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
 
