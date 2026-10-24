@@ -1,5 +1,7 @@
 import asyncio
 import email
+import email.header
+import email.utils
 import ssl
 from datetime import datetime, timezone
 from email.mime.text import MIMEText
@@ -315,6 +317,53 @@ class TestEmailClient:
             assert "recipient@example.com" in recipients
             assert "cc@example.com" in recipients
             assert "bcc@example.com" in recipients
+
+
+class TestSenderIdentity:
+    """From header and SMTP envelope sender are built from name and address separately."""
+
+    async def _send(self, client):
+        mock_smtp = AsyncMock()
+        mock_smtp.__aenter__.return_value = mock_smtp
+        mock_smtp.__aexit__.return_value = None
+        with patch("aiosmtplib.SMTP", return_value=mock_smtp):
+            await client.send_email(recipients=["to@example.com"], subject="S", body="B")
+        args, kwargs = mock_smtp.send_message.call_args
+        return args[0], kwargs["sender"]
+
+    @pytest.mark.asyncio
+    async def test_plain_name_header_unchanged(self, email_server):
+        client = EmailClient(email_server, sender="john@example.com", sender_name="John Smith")
+        msg, envelope = await self._send(client)
+        assert msg["From"] == "John Smith <john@example.com>"
+        assert envelope == "john@example.com"
+
+    @pytest.mark.asyncio
+    async def test_comma_in_name_is_quoted_and_envelope_is_address(self, email_server):
+        client = EmailClient(email_server, sender="john@example.com", sender_name="Smith, John")
+        msg, envelope = await self._send(client)
+        assert msg["From"] == '"Smith, John" <john@example.com>'
+        assert email.utils.getaddresses([msg["From"]]) == [("Smith, John", "john@example.com")]
+        assert envelope == "john@example.com"
+
+    @pytest.mark.asyncio
+    async def test_non_ascii_name_encodes_only_the_name(self, email_server):
+        client = EmailClient(email_server, sender="jose@example.com", sender_name="José Müller")
+        msg, envelope = await self._send(client)
+        from_header = str(msg["From"])
+        assert from_header.endswith(" <jose@example.com>")
+        assert from_header.startswith("=?utf-8?")
+        name, addr = email.utils.parseaddr(from_header)
+        assert str(email.header.make_header(email.header.decode_header(name))) == "José Müller"
+        assert addr == "jose@example.com"
+        assert envelope == "jose@example.com"
+        assert msg["Message-Id"].endswith("@example.com>")
+
+    @pytest.mark.asyncio
+    async def test_legacy_combined_sender_still_sends_from_address(self, email_client):
+        msg, envelope = await self._send(email_client)
+        assert msg["From"] == "Test User <test@example.com>"
+        assert envelope == "test@example.com"
 
 
 class TestSendEmailMessageIdAndDate:

@@ -250,9 +250,13 @@ class EmailClient:
         oauth2_tenant_id: str | None = None,
         oauth2_client_secret: str | None = None,
         search_chunk_size: int = 10,
+        sender_name: str | None = None,
     ):
         self.email_server = email_server
+        # With sender_name, sender is the bare address; without it, sender may be a
+        # preformatted "Name <address>" string (legacy callers).
         self.sender = sender or email_server.user_name
+        self.sender_name = sender_name
         self.auth_type = auth_type
         self.email_address = email_address
         self.oauth2_provider = oauth2_provider
@@ -1009,11 +1013,17 @@ class EmailClient:
         else:
             msg["Subject"] = subject
 
-        # Handle sender name with special characters
-        if any(ord(c) > 127 for c in self.sender):
-            msg["From"] = Header(self.sender, "utf-8")
+        # Build From from name and address separately: formataddr quotes names with
+        # specials like commas and RFC 2047-encodes only a non-ASCII name, never the address.
+        if self.sender_name is not None:
+            envelope_sender = self.sender
+            msg["From"] = email.utils.formataddr((self.sender_name, self.sender), charset="utf-8")
         else:
-            msg["From"] = self.sender
+            envelope_sender = email.utils.parseaddr(self.sender)[1] or self.sender
+            if any(ord(c) > 127 for c in self.sender):
+                msg["From"] = Header(self.sender, "utf-8")
+            else:
+                msg["From"] = self.sender
 
         msg["To"] = ", ".join(recipients)
 
@@ -1030,7 +1040,7 @@ class EmailClient:
         # Set Date and Message-Id headers so the same values appear in both
         # the SMTP-sent copy and the IMAP Sent folder copy
         msg["Date"] = email.utils.formatdate(localtime=True)
-        sender_domain = self.sender.rsplit("@", 1)[-1].rstrip(">")
+        sender_domain = envelope_sender.rsplit("@", 1)[-1]
         msg["Message-Id"] = email.utils.make_msgid(domain=sender_domain)
 
         # Note: BCC recipients are not added to headers (they remain hidden)
@@ -1061,7 +1071,9 @@ class EmailClient:
             if bcc:
                 all_recipients.extend(bcc)
 
-            await smtp.send_message(msg, recipients=all_recipients)
+            # Pass the envelope sender explicitly; otherwise aiosmtplib parses it from
+            # the From header, which yields "Smith" for a display name like "Smith, John".
+            await smtp.send_message(msg, sender=envelope_sender, recipients=all_recipients)
 
         # Return the message for potential saving to Sent folder
         return msg
@@ -1578,7 +1590,8 @@ class ClassicEmailHandler(EmailHandler):
         self.incoming_client = EmailClient(email_settings.incoming, **oauth2_kwargs)
         self.outgoing_client = EmailClient(
             email_settings.outgoing,
-            sender=f"{email_settings.full_name} <{email_settings.email_address}>",
+            sender=email_settings.email_address,
+            sender_name=email_settings.full_name,
             **oauth2_kwargs,
         )
         self.save_to_sent = email_settings.save_to_sent

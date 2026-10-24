@@ -56,7 +56,8 @@ class TestClassicEmailHandler:
         # Check that clients are initialized correctly
         assert handler.incoming_client.email_server == email_settings.incoming
         assert handler.outgoing_client.email_server == email_settings.outgoing
-        assert handler.outgoing_client.sender == f"{email_settings.full_name} <{email_settings.email_address}>"
+        assert handler.outgoing_client.sender == email_settings.email_address
+        assert handler.outgoing_client.sender_name == email_settings.full_name
 
     @pytest.mark.asyncio
     async def test_get_emails(self, classic_handler):
