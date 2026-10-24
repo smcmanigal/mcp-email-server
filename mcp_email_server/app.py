@@ -161,14 +161,20 @@ async def send_email(
         str | None,
         Field(
             default=None,
-            description="Message-ID of the email being replied to. Enables proper threading in email clients.",
+            description=(
+                "Message-ID of the email being replied to, passed exactly as returned by list_emails_metadata, "
+                "including the angle brackets (e.g. '<abc123@example.com>'). Enables proper threading in email clients."
+            ),
         ),
     ] = None,
     references: Annotated[
         str | None,
         Field(
             default=None,
-            description="Space-separated Message-IDs for the thread chain. Usually includes in_reply_to plus ancestors.",
+            description=(
+                "Space-separated Message-IDs for the thread chain, each with its angle brackets "
+                "(e.g. '<a@x.com> <b@x.com>'). Usually includes in_reply_to plus ancestors."
+            ),
         ),
     ] = None,
 ) -> str:

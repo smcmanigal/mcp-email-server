@@ -95,7 +95,10 @@ def send_email(
     bcc: Annotated[list[str] | None, typer.Option("--bcc", help="BCC email addresses")] = None,
     html: Annotated[bool, typer.Option("--html", help="Send as HTML")] = False,
     attachment: Annotated[list[str] | None, typer.Option("--attachment", help="File paths to attach")] = None,
-    reply_to: Annotated[str | None, typer.Option("--reply-to", help="Message-ID to reply to")] = None,
+    reply_to: Annotated[
+        str | None,
+        typer.Option("--reply-to", help="Message-ID to reply to, including angle brackets, e.g. '<abc@example.com>'"),
+    ] = None,
 ) -> None:
     """Send an email."""
     try:
