@@ -62,6 +62,34 @@ def _quote_search_param(param: str) -> str:
     return f'"{escaped}"'
 
 
+_SEARCH_COMPLETED_ONLY = re.compile(r"SEARCH completed \(took [0-9]+ ms\)", re.IGNORECASE)
+
+
+def _parse_search_uids(messages: list | None) -> list[str]:
+    """Return the UIDs from a UID SEARCH response.
+
+    Compliant servers put the space-separated UIDs on the first response line,
+    which is empty when nothing matches. iCloud omits that line for an empty
+    result, so aioimaplib's first line is the completion text instead
+    ("SEARCH completed (took 5 ms)"). That is read as an empty result. The line
+    is only trusted when every token is a UID: the "5" in "took 5 ms" must never
+    be acted on as a message. Any other unexpected text is logged and treated
+    as no matches.
+    """
+    if not messages or not messages[0]:
+        return []
+    first = messages[0]
+    text = bytes(first).decode(errors="replace") if isinstance(first, bytes | bytearray) else str(first)
+    tokens = text.split()
+    if all(token.isascii() and token.isdigit() for token in tokens):
+        return tokens
+    if _SEARCH_COMPLETED_ONLY.fullmatch(text.strip()):
+        logger.debug("Server omitted the empty UID SEARCH payload; treating the search as empty")
+    else:
+        logger.warning(f"Unexpected UID SEARCH response, treating as no matches: {text!r}")
+    return []
+
+
 async def _send_imap_id(imap: aioimaplib.IMAP4 | aioimaplib.IMAP4_SSL) -> None:
     """Send IMAP ID command with fallback for strict servers like 163.com.
 
@@ -584,7 +612,7 @@ class EmailClient:
             if result != "OK":
                 logger.error(f"SEARCH failed: {result} {messages}")
                 return 0
-            return len(messages[0].split())
+            return len(_parse_search_uids(messages))
         finally:
             # Ensure we logout properly
             try:
@@ -647,11 +675,11 @@ class EmailClient:
             if result != "OK":
                 logger.error(f"SEARCH failed: {result} {messages}")
                 return
-            if not messages or not messages[0]:
+            email_ids = _parse_search_uids(messages)
+            if not email_ids:
                 logger.warning("No messages returned from search")
                 return
 
-            email_ids = messages[0].split()
             logger.info(f"Found {len(email_ids)} email IDs")
 
             # Sort by UID (monotonically increasing, approximates chronological order)
@@ -1322,9 +1350,7 @@ class EmailClient:
                     f"(server response: {messages!r}). Try lowering search_chunk_size for this account."
                 )
                 continue
-            if messages and messages[0]:
-                for uid in messages[0].split():
-                    all_uids.add(uid.decode() if isinstance(uid, bytes) else uid)
+            all_uids.update(_parse_search_uids(messages))
         return sorted(all_uids, key=lambda uid: int(uid))
 
     async def _move_uids(self, imap, email_ids: list[str], target_folder: str) -> tuple[list[str], list[str]]:
