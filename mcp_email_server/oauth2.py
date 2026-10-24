@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import ClassVar
 
-from mcp_email_server.log import logger
+from mcp_email_server.utils.private_file import write_private_text
 
 DEFAULT_CONFIG_DIR = (
     Path(os.getenv("MCP_EMAIL_SERVER_CONFIG_PATH", "~/.config/zerolib/mcp_email_server/config.toml"))
@@ -95,14 +95,6 @@ class OAuth2TokenManager(abc.ABC):
         return True
 
 
-def _ensure_file_permissions(path: Path) -> None:
-    """Set file permissions to 0600 (owner read/write only)."""
-    try:
-        path.chmod(0o600)
-    except OSError as e:
-        logger.warning(f"Could not set file permissions on {path}: {e}")
-
-
 class MSALTokenManager(OAuth2TokenManager):
     """Microsoft 365 OAuth2 token manager using MSAL."""
 
@@ -139,9 +131,7 @@ class MSALTokenManager(OAuth2TokenManager):
     def _save_cache(self) -> None:
         """Persist the token cache to disk."""
         if self._cache.has_state_changed:
-            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-            self.cache_path.write_text(self._cache.serialize())
-            _ensure_file_permissions(self.cache_path)
+            write_private_text(self.cache_path, self._cache.serialize())
 
     def get_access_token(self, email: str) -> str:
         accounts = self._app.get_accounts(username=email)
@@ -250,9 +240,7 @@ class GoogleTokenManager(OAuth2TokenManager):
             "expiry": credentials.expiry.isoformat() if isinstance(credentials.expiry, datetime) else None,
         }
 
-        self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-        self.cache_path.write_text(json.dumps(cache_data, indent=2))
-        _ensure_file_permissions(self.cache_path)
+        write_private_text(self.cache_path, json.dumps(cache_data, indent=2))
 
     def get_access_token(self, email: str) -> str:
         import google.auth.transport.requests
@@ -338,8 +326,7 @@ class GoogleTokenManager(OAuth2TokenManager):
             return False
 
         del cache_data[email]
-        self.cache_path.write_text(json.dumps(cache_data, indent=2))
-        _ensure_file_permissions(self.cache_path)
+        write_private_text(self.cache_path, json.dumps(cache_data, indent=2))
         return True
 
 

@@ -16,6 +16,7 @@ from pydantic_settings import (
 )
 
 from mcp_email_server.log import logger
+from mcp_email_server.utils.private_file import write_private_text
 
 DEFAULT_CONFIG_PATH = "~/.config/zerolib/mcp_email_server/config.toml"
 
@@ -387,8 +388,7 @@ class Settings(BaseSettings):
 
     def store(self) -> None:
         toml_file = self.model_config["toml_file"]
-        toml_file.parent.mkdir(parents=True, exist_ok=True)
-        toml_file.write_text(self._to_toml())
+        write_private_text(toml_file, self._to_toml())
         logger.info(f"Settings stored in {toml_file}")
 
 

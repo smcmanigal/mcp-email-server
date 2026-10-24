@@ -219,6 +219,7 @@ class TestMSALTokenManager:
 
             assert cache_path.exists()
             assert json.loads(cache_path.read_text()) == {"cached": True}
+            assert cache_path.stat().st_mode & 0o777 == 0o600
 
     def test_cache_load_existing(self, tmp_path):
         """Test that existing cache is loaded on init."""
