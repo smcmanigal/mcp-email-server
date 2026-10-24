@@ -282,7 +282,15 @@ async def download_attachment(
 async def add_email_flags(
     account_name: Annotated[str, Field(description="The name of the email account.")],
     email_ids: Annotated[list[str | int], Field(description="List of email IDs to add flags to.")],
-    flags: Annotated[list[str], Field(description="List of flags to add (e.g., ['ProcessedByBot', 'Seen']).")],
+    flags: Annotated[
+        list[str],
+        Field(
+            description=(
+                "List of flags to add (e.g., ['ProcessedByBot', 'Seen']). System flags (Seen, Answered, "
+                "Flagged, Deleted, Draft) get their backslash automatically; other names are set as keywords."
+            )
+        ),
+    ],
     silent: Annotated[
         bool, Field(default=False, description="Use silent operation to suppress server responses (default: False)")
     ] = False,

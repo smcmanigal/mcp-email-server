@@ -63,9 +63,16 @@ class TestNormalizeFlags:
         assert result == ["\\Seen", "\\Flagged"]
 
     def test_normalize_custom_flags(self):
-        """Custom flags also get backslash prefix."""
-        result = _normalize_flags(["ProcessedByBot", "MyCustomFlag"])
-        assert result == ["\\ProcessedByBot", "\\MyCustomFlag"]
+        """Keywords are not system flags and must not get a backslash."""
+        result = _normalize_flags(["ProcessedByBot", "MyCustomFlag", "$Label1", "$Junk"])
+        assert result == ["ProcessedByBot", "MyCustomFlag", "$Label1", "$Junk"]
+
+    def test_normalize_system_flags_case_insensitive(self):
+        result = _normalize_flags(["seen", "\\FLAGGED", "deleted", "Draft", "\\answered"])
+        assert result == ["\\Seen", "\\Flagged", "\\Deleted", "\\Draft", "\\Answered"]
+
+    def test_explicit_backslash_on_unknown_name_is_kept(self):
+        assert _normalize_flags(["\\Important"]) == ["\\Important"]
 
     def test_normalize_bytes_flags(self):
         """Bytes flags are decoded and normalized."""

@@ -1752,15 +1752,25 @@ class EmailClient:
                 logger.info(f"Error during logout: {e}")
 
 
+# RFC 3501 system flags a client may store (\\Recent is server-managed).
+_SYSTEM_FLAGS = {name.lower(): f"\\{name}" for name in ("Seen", "Answered", "Flagged", "Deleted", "Draft")}
+
+
 def _normalize_flags(flags: list[str]) -> list[str]:
-    """Normalize flag format - ensure proper backslash prefix for system flags."""
+    """Normalize flags: system flags get their canonical backslash form, keywords are left as is.
+
+    "seen", "Seen" and "\\Seen" all become "\\Seen". Anything else is a keyword such as
+    "$Label1" or "ProcessedByBot" and must not get a backslash, which would turn it into
+    an invalid system flag. An explicit backslash on an unknown name is kept as given.
+    """
     normalized = []
     for flag in flags:
         # Handle both bytes and strings from IMAP responses
         if isinstance(flag, bytes):
             flag = flag.decode("utf-8", errors="replace")
-        clean_flag = flag.strip().lstrip("\\")
-        normalized.append(f"\\{clean_flag}")
+        clean_flag = flag.strip()
+        system_flag = _SYSTEM_FLAGS.get(clean_flag.lstrip("\\").lower())
+        normalized.append(system_flag or clean_flag)
     return normalized
 
 
