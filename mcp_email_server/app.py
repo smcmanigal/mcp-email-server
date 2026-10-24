@@ -173,7 +173,8 @@ async def send_email(
             default=None,
             description=(
                 "Space-separated Message-IDs for the thread chain, each with its angle brackets "
-                "(e.g. '<a@x.com> <b@x.com>'). Usually includes in_reply_to plus ancestors."
+                "(e.g. '<a@x.com> <b@x.com>'). For a reply, use the original email's references "
+                "(returned by get_emails_content) followed by its message_id."
             ),
         ),
     ] = None,

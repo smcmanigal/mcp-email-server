@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
@@ -52,6 +53,9 @@ def print_email_content(email: dict) -> None:
         f"[cyan]To:[/cyan] {', '.join(email.get('recipients', []))}\n"
         f"[cyan]Date:[/cyan] {email.get('date', '')}\n"
     )
+    for key, label in (("message_id", "Message-ID"), ("in_reply_to", "In-Reply-To"), ("references", "References")):
+        if email.get(key):
+            header += f"[cyan]{label}:[/cyan] {escape(email[key])}\n"
     if email.get("attachments"):
         header += f"[cyan]Attachments:[/cyan] {', '.join(email['attachments'])}\n"
 

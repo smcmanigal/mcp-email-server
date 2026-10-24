@@ -93,6 +93,14 @@ def _parse_search_uids(messages: list | None) -> list[str]:
     return []
 
 
+def _unfold_header(value) -> str | None:
+    """A header value with folding whitespace collapsed to single spaces, or None if absent."""
+    if value is None:
+        return None
+    unfolded = " ".join(str(value).split())
+    return unfolded or None
+
+
 def _decode_text_part(payload: bytes, charset: str) -> str:
     """Decode a text part with its declared charset, falling back to UTF-8 with replacement.
 
@@ -464,6 +472,9 @@ class EmailClient:
 
         # Extract Message-ID for reply threading
         message_id = email_message.get("Message-ID")
+        # The parent's threading headers, so a reply can build In-Reply-To and References
+        in_reply_to = _unfold_header(email_message.get("In-Reply-To"))
+        references = _unfold_header(email_message.get("References"))
 
         # Extract recipients and parse date
         to_addresses = self._parse_recipients(email_message)
@@ -535,6 +546,8 @@ class EmailClient:
         return {
             "email_id": email_id or "",
             "message_id": message_id,
+            "in_reply_to": in_reply_to,
+            "references": references,
             "subject": subject,
             "from": sender,
             "to": to_addresses,
@@ -1881,6 +1894,8 @@ class ClassicEmailHandler(EmailHandler):
                         EmailBodyResponse(
                             email_id=email_data["email_id"],
                             message_id=email_data.get("message_id"),
+                            in_reply_to=email_data.get("in_reply_to"),
+                            references=email_data.get("references"),
                             subject=email_data["subject"],
                             sender=email_data["from"],
                             recipients=email_data["to"],

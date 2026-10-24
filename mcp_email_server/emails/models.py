@@ -44,6 +44,10 @@ class EmailBodyResponse(EmailMetadata):
     """Single email body response - extends EmailMetadata with body content"""
 
     body: str
+    # The message's own threading headers; a reply sets In-Reply-To to message_id and
+    # References to these references plus message_id.
+    in_reply_to: str | None = None
+    references: str | None = None
 
 
 class EmailContentBatchResponse(BaseModel):

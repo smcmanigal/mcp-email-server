@@ -973,3 +973,52 @@ class TestFilenameWithoutDisposition:
         result = email_client._parse_email_data(self._RAW)
         assert result["attachments"] == ["photo.jpg"]
         assert result["body"].strip() == "See photo"
+
+
+class TestThreadingHeadersOnRead:
+    def test_in_reply_to_and_unfolded_references_returned(self, email_client):
+        raw = (
+            b"From: a@example.com\r\nSubject: Re: plan\r\nMessage-ID: <c@x.com>\r\n"
+            b"In-Reply-To: <b@x.com>\r\nReferences: <a@x.com>\r\n\t<b@x.com>\r\n\r\nbody\r\n"
+        )
+        result = email_client._parse_email_data(raw)
+        assert result["message_id"] == "<c@x.com>"
+        assert result["in_reply_to"] == "<b@x.com>"
+        assert result["references"] == "<a@x.com> <b@x.com>"
+
+    def test_absent_headers_are_none(self, email_client):
+        result = email_client._parse_email_data(b"From: a@example.com\r\nSubject: x\r\n\r\nbody\r\n")
+        assert result["in_reply_to"] is None
+        assert result["references"] is None
+
+    @pytest.mark.asyncio
+    async def test_get_emails_content_passes_them_through(self):
+        from mcp_email_server.config import EmailSettings
+        from mcp_email_server.emails.classic import ClassicEmailHandler
+
+        settings = EmailSettings.init(
+            account_name="t",
+            full_name="T",
+            email_address="t@example.com",
+            user_name="t",
+            password="p",
+            imap_host="imap.example.com",
+            smtp_host="smtp.example.com",
+        )
+        handler = ClassicEmailHandler(settings)
+        data = {
+            "email_id": "1",
+            "message_id": "<c@x.com>",
+            "in_reply_to": "<b@x.com>",
+            "references": "<a@x.com> <b@x.com>",
+            "subject": "Re: plan",
+            "from": "a@example.com",
+            "to": [],
+            "date": datetime.now(timezone.utc),
+            "body": "body",
+            "attachments": [],
+        }
+        with patch.object(handler.incoming_client, "get_email_body_by_id", AsyncMock(return_value=data)):
+            result = await handler.get_emails_content(["1"])
+        assert result.emails[0].in_reply_to == "<b@x.com>"
+        assert result.emails[0].references == "<a@x.com> <b@x.com>"
