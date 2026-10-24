@@ -146,8 +146,11 @@ def _attachment_payload(part) -> bytes | None:
 
 
 def _is_attachment_part(part) -> bool:
-    """Whether a MIME part is listed as an attachment: a filename plus an attachment or inline disposition,
-    or an attached email (message/rfc822).
+    """Whether a MIME part is listed as an attachment.
+
+    That is a part with a filename and an attachment, inline or missing disposition (some
+    senders give the name only in Content-Type), or an attached email (message/rfc822).
+    Download matches any part with a filename, so listing must not be narrower.
 
     Applies to a single-part message's own top-level part too, such as a scanner
     email whose whole body is one PDF.
@@ -156,8 +159,8 @@ def _is_attachment_part(part) -> bool:
         return True
     if not part.get_filename():
         return False
-    content_disposition = str(part.get("Content-Disposition", ""))
-    return "attachment" in content_disposition or "inline" in content_disposition
+    content_disposition = str(part.get("Content-Disposition", "")).strip().lower()
+    return not content_disposition or "attachment" in content_disposition or "inline" in content_disposition
 
 
 _IMAP_ID_TIMEOUT = 10

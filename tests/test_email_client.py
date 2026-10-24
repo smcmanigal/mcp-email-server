@@ -958,3 +958,18 @@ class TestUnknownCharset:
         assert _decode_text_part(b"bad \xff byte", "x-bogus") == "bad � byte"
         assert _decode_text_part(b"bad \xff byte", "utf-8") == "bad � byte"
         assert _decode_text_part("é".encode("latin-1"), "latin-1") == "é"
+
+
+class TestFilenameWithoutDisposition:
+    _RAW = (
+        b"From: a@example.com\r\nSubject: Photo\r\nMIME-Version: 1.0\r\n"
+        b'Content-Type: multipart/mixed; boundary="b"\r\n\r\n'
+        b"--b\r\nContent-Type: text/plain\r\n\r\nSee photo\r\n"
+        b'--b\r\nContent-Type: image/jpeg; name="photo.jpg"\r\nContent-Transfer-Encoding: base64\r\n\r\n/9j/4AAQ\r\n'
+        b"--b--\r\n"
+    )
+
+    def test_listed_like_download_finds_it(self, email_client):
+        result = email_client._parse_email_data(self._RAW)
+        assert result["attachments"] == ["photo.jpg"]
+        assert result["body"].strip() == "See photo"
