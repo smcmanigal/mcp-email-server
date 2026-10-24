@@ -1293,7 +1293,12 @@ class EmailClient:
 
             for email_id in email_ids:
                 try:
-                    await imap.uid("store", email_id, "+FLAGS", r"(\Deleted)")
+                    # aioimaplib returns NO/BAD rather than raising, so check the result.
+                    response = await imap.uid("store", email_id, "+FLAGS", r"(\Deleted)")
+                    if getattr(response, "result", "OK") != "OK":
+                        logger.error(f"Failed to delete email {email_id}: STORE returned {response.result}")
+                        failed_ids.append(email_id)
+                        continue
                     deleted_ids.append(email_id)
                 except Exception as e:
                     logger.error(f"Failed to delete email {email_id}: {type(e).__name__}: {e!r}")
@@ -1451,7 +1456,15 @@ class EmailClient:
                 # Fallback to COPY + DELETE
                 copy_response = await imap.uid("copy", email_id, _quote_mailbox(target_folder))
                 if copy_response and copy_response.result == "OK":
-                    await imap.uid("store", email_id, "+FLAGS", r"(\Deleted)")
+                    store_response = await imap.uid("store", email_id, "+FLAGS", r"(\Deleted)")
+                    if getattr(store_response, "result", "OK") != "OK":
+                        # Copied but not removed from the source; report it rather than claim a move.
+                        logger.error(
+                            f"Copied email {email_id} to {target_folder} but could not mark it deleted: "
+                            f"STORE returned {store_response.result}"
+                        )
+                        failed.append(email_id)
+                        continue
                     logger.info(f"Moved email {email_id} to {target_folder} using COPY+DELETE")
                     moved.append(email_id)
                     flagged_deleted.append(email_id)
@@ -1517,7 +1530,15 @@ class EmailClient:
                 # Fallback to COPY + DELETE
                 copy_response = await imap.uid("copy", uid_set, quoted_folder)
                 if copy_response and copy_response.result == "OK":
-                    await imap.uid("store", uid_set, "+FLAGS", r"(\Deleted)")
+                    store_response = await imap.uid("store", uid_set, "+FLAGS", r"(\Deleted)")
+                    if getattr(store_response, "result", "OK") != "OK":
+                        logger.error(
+                            f"Copied batch to {target_folder} but could not mark it deleted: "
+                            f"STORE returned {store_response.result} (UIDs: {uid_set})"
+                        )
+                        failed.extend(batch)
+                        failed.extend(email_ids[i + batch_size :])
+                        break
                     logger.info(f"Moved {len(batch)} emails to {target_folder} using COPY+DELETE (UIDs: {uid_set})")
                     moved.extend(batch)
                     flagged_deleted.extend(batch)

@@ -113,3 +113,59 @@ class TestDeleteExpunge:
         assert (deleted, failed) == (["4", "5"], [])
         assert _uid_calls(imap, "expunge") == [("expunge", "4:5")]
         imap.expunge.assert_not_called()
+
+
+class TestStoreResponseChecked:
+    @pytest.mark.asyncio
+    async def test_delete_reports_store_failure(self, email_client):
+        imap = _imap()
+        imap._client_task = asyncio.get_running_loop().create_future()
+        imap._client_task.set_result(None)
+        imap.login = AsyncMock(return_value=OK)
+
+        async def uid(cmd, *args):
+            if cmd == "store" and args[0] == "5":
+                return MagicMock(result="NO", lines=[b"read-only"])
+            return OK
+
+        imap.uid = AsyncMock(side_effect=uid)
+        email_client.imap_class = MagicMock(return_value=imap)
+
+        deleted, failed = await email_client.delete_emails(["4", "5"], "INBOX")
+
+        assert (deleted, failed) == (["4"], ["5"])
+        assert _uid_calls(imap, "expunge") == [("expunge", "4")]
+
+    @pytest.mark.asyncio
+    async def test_copy_fallback_store_failure_is_not_a_move(self, email_client):
+        imap = _imap()
+
+        async def uid(cmd, *args):
+            if cmd == "move":
+                raise OSError("no MOVE")
+            if cmd == "store" and args[0] == "2":
+                return MagicMock(result="NO", lines=[])
+            return OK
+
+        imap.uid = AsyncMock(side_effect=uid)
+        moved, failed = await email_client._move_uids(imap, ["1", "2"], "Archive")
+
+        assert (moved, failed) == (["1"], ["2"])
+        assert _uid_calls(imap, "expunge") == [("expunge", "1")]
+
+    @pytest.mark.asyncio
+    async def test_batch_copy_fallback_store_failure_fails_fast(self, email_client):
+        imap = _imap()
+
+        async def uid(cmd, *args):
+            if cmd == "move":
+                raise OSError("no MOVE")
+            if cmd == "store":
+                return MagicMock(result="NO", lines=[])
+            return OK
+
+        imap.uid = AsyncMock(side_effect=uid)
+        moved, failed = await email_client._batch_move_uids(imap, ["1", "2", "3"], "Archive", batch_size=2)
+
+        assert (moved, failed) == ([], ["1", "2", "3"])
+        assert _uid_calls(imap, "expunge") == []
