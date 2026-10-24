@@ -214,6 +214,35 @@ async def _refresh_imap_capabilities(imap) -> None:
         logger.warning(f"IMAP CAPABILITY refresh after login failed, using pre-auth capabilities: {e!s}")
 
 
+def _imap_has_capability(imap, capability: str) -> bool:
+    try:
+        return capability in imap.protocol.capabilities
+    except Exception:
+        return False
+
+
+async def _expunge_uids(imap, uids: list[str]) -> None:
+    """Permanently remove only the given UIDs (which the caller marked \\Deleted).
+
+    A bare EXPUNGE would also remove messages another client marked \\Deleted in the same
+    mailbox, so UID EXPUNGE (RFC 4315 UIDPLUS) is used when available. Without UIDPLUS
+    we fall back to the bare EXPUNGE with a warning rather than leaving the copies behind.
+    """
+    if not uids:
+        return
+    if _imap_has_capability(imap, "UIDPLUS"):
+        uid_set = EmailClient._build_uid_set(sorted(uids, key=int))
+        response = await imap.uid("expunge", uid_set)
+        if getattr(response, "result", "OK") != "OK":
+            logger.warning(f"UID EXPUNGE {uid_set} returned {response.result}: {response.lines}")
+        return
+    logger.warning(
+        "Server lacks UIDPLUS; using a mailbox-wide EXPUNGE, which also removes messages "
+        "other clients marked \\Deleted in this mailbox"
+    )
+    await imap.expunge()
+
+
 async def _smtp_authenticate(
     smtp,
     email_server: EmailServer,
@@ -1270,7 +1299,7 @@ class EmailClient:
                     logger.error(f"Failed to delete email {email_id}: {type(e).__name__}: {e!r}")
                     failed_ids.append(email_id)
 
-            await imap.expunge()
+            await _expunge_uids(imap, deleted_ids)
         finally:
             try:
                 await imap.logout()
@@ -1406,6 +1435,7 @@ class EmailClient:
         """Move a list of UIDs to target_folder. Returns (moved, failed)."""
         moved = []
         failed = []
+        flagged_deleted = []
         for email_id in email_ids:
             try:
                 # Try MOVE command first (RFC 6851)
@@ -1424,6 +1454,7 @@ class EmailClient:
                     await imap.uid("store", email_id, "+FLAGS", r"(\Deleted)")
                     logger.info(f"Moved email {email_id} to {target_folder} using COPY+DELETE")
                     moved.append(email_id)
+                    flagged_deleted.append(email_id)
                 else:
                     logger.error(f"Failed to copy email {email_id}: {copy_response}")
                     failed.append(email_id)
@@ -1431,8 +1462,8 @@ class EmailClient:
                 logger.error(f"Error moving email {email_id} to {target_folder}: {type(e).__name__}: {e!r}")
                 failed.append(email_id)
 
-        if moved:
-            await imap.expunge()
+        # Native MOVE already removed its messages; only the COPY fallback needs an expunge.
+        await _expunge_uids(imap, flagged_deleted)
         return moved, failed
 
     @staticmethod
@@ -1462,6 +1493,7 @@ class EmailClient:
         """Move UIDs in batches using UID set notation. Fails fast on first error."""
         moved = []
         failed = []
+        flagged_deleted = []
         quoted_folder = _quote_mailbox(target_folder)
 
         for i in range(0, len(email_ids), batch_size):
@@ -1488,6 +1520,7 @@ class EmailClient:
                     await imap.uid("store", uid_set, "+FLAGS", r"(\Deleted)")
                     logger.info(f"Moved {len(batch)} emails to {target_folder} using COPY+DELETE (UIDs: {uid_set})")
                     moved.extend(batch)
+                    flagged_deleted.extend(batch)
                 else:
                     logger.error(f"Failed to copy batch to {target_folder}: {copy_response}")
                     failed.extend(batch)
@@ -1499,8 +1532,8 @@ class EmailClient:
                 failed.extend(email_ids[i + batch_size :])
                 break
 
-        if moved:
-            await imap.expunge()
+        # Native MOVE already removed its messages; only the COPY fallback needs an expunge.
+        await _expunge_uids(imap, flagged_deleted)
         return moved, failed
 
     async def apply_filter_rule(

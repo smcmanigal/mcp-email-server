@@ -652,7 +652,9 @@ class TestBatchMoveUids:
         # 3 batches: [1,2], [3,4], [5] → 3 move calls
         move_calls = [c for c in mock_imap.uid.call_args_list if c.args[0] == "move"]
         assert len(move_calls) == 3
-        mock_imap.expunge.assert_called_once()
+        # Native MOVE removes the messages itself; no expunge of any kind.
+        mock_imap.expunge.assert_not_called()
+        assert not [c for c in mock_imap.uid.call_args_list if c.args[0] == "expunge"]
 
     @pytest.mark.asyncio
     async def test_batch_move_fails_fast(self, email_client):
