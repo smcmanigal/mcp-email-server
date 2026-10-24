@@ -2110,7 +2110,7 @@ class ClassicEmailHandler(EmailHandler):
         return results
 
     async def _modify_flags(
-        self, email_ids: list[str], flags: list[str], operation: str, silent: bool = False
+        self, email_ids: list[str], flags: list[str], operation: str, silent: bool = False, mailbox: str = "INBOX"
     ) -> dict[str, bool]:
         """Core flag modification method using IMAP STORE command."""
         if not email_ids or not flags:
@@ -2123,7 +2123,7 @@ class ClassicEmailHandler(EmailHandler):
         uid_list = ",".join(str(eid) for eid in email_ids)
 
         try:
-            async with self.imap_connection() as imap:
+            async with self.imap_connection(mailbox) as imap:
                 try:
                     return await self._execute_batch_flag_operation(
                         imap, uid_list, store_cmd, flags_str, email_ids, operation
@@ -2138,17 +2138,23 @@ class ClassicEmailHandler(EmailHandler):
             logger.error(f"Error in flag modification: {type(e).__name__}: {e!r}")
             return {str(eid): False for eid in email_ids}
 
-    async def add_flags(self, email_ids: list[str], flags: list[str], silent: bool = False) -> dict[str, bool]:
+    async def add_flags(
+        self, email_ids: list[str], flags: list[str], silent: bool = False, mailbox: str = "INBOX"
+    ) -> dict[str, bool]:
         """Add flags to emails using +FLAGS operation."""
-        return await self._modify_flags(email_ids, flags, "add", silent)
+        return await self._modify_flags(email_ids, flags, "add", silent, mailbox)
 
-    async def remove_flags(self, email_ids: list[str], flags: list[str], silent: bool = False) -> dict[str, bool]:
+    async def remove_flags(
+        self, email_ids: list[str], flags: list[str], silent: bool = False, mailbox: str = "INBOX"
+    ) -> dict[str, bool]:
         """Remove flags from emails using -FLAGS operation."""
-        return await self._modify_flags(email_ids, flags, "remove", silent)
+        return await self._modify_flags(email_ids, flags, "remove", silent, mailbox)
 
-    async def replace_flags(self, email_ids: list[str], flags: list[str], silent: bool = False) -> dict[str, bool]:
+    async def replace_flags(
+        self, email_ids: list[str], flags: list[str], silent: bool = False, mailbox: str = "INBOX"
+    ) -> dict[str, bool]:
         """Replace all flags on emails using FLAGS operation."""
-        return await self._modify_flags(email_ids, flags, "replace", silent)
+        return await self._modify_flags(email_ids, flags, "replace", silent, mailbox)
 
     async def save_email_to_file(  # noqa: C901
         self,

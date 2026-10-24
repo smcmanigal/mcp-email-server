@@ -294,10 +294,13 @@ async def add_email_flags(
     silent: Annotated[
         bool, Field(default=False, description="Use silent operation to suppress server responses (default: False)")
     ] = False,
+    mailbox: Annotated[
+        str, Field(default="INBOX", description="The mailbox containing the emails (default: INBOX).")
+    ] = "INBOX",
 ) -> dict[str, Any]:
     handler = dispatch_handler(account_name)
     id_strings = [str(eid) for eid in email_ids]
-    results = await handler.add_flags(id_strings, flags, silent)
+    results = await handler.add_flags(id_strings, flags, silent, mailbox)
     successful = sum(results.values())
     return {
         "results": results,
@@ -317,10 +320,13 @@ async def remove_email_flags(
     silent: Annotated[
         bool, Field(default=False, description="Use silent operation to suppress server responses (default: False)")
     ] = False,
+    mailbox: Annotated[
+        str, Field(default="INBOX", description="The mailbox containing the emails (default: INBOX).")
+    ] = "INBOX",
 ) -> dict[str, Any]:
     handler = dispatch_handler(account_name)
     id_strings = [str(eid) for eid in email_ids]
-    results = await handler.remove_flags(id_strings, flags, silent)
+    results = await handler.remove_flags(id_strings, flags, silent, mailbox)
     successful = sum(results.values())
     return {
         "results": results,
@@ -340,10 +346,13 @@ async def replace_email_flags(
     silent: Annotated[
         bool, Field(default=False, description="Use silent operation to suppress server responses (default: False)")
     ] = False,
+    mailbox: Annotated[
+        str, Field(default="INBOX", description="The mailbox containing the emails (default: INBOX).")
+    ] = "INBOX",
 ) -> dict[str, Any]:
     handler = dispatch_handler(account_name)
     id_strings = [str(eid) for eid in email_ids]
-    results = await handler.replace_flags(id_strings, flags, silent)
+    results = await handler.replace_flags(id_strings, flags, silent, mailbox)
     successful = sum(results.values())
     return {
         "results": results,

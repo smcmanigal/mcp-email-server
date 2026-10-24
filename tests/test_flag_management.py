@@ -230,3 +230,66 @@ class TestFlagValidation:
         await classic_handler.add_flags(["1"], ["$Label1", "seen", "ProcessedByBot"])
 
         assert mock_imap.uid.call_args.args == ("store", "1", "+FLAGS", "($Label1 \\Seen ProcessedByBot)")
+
+
+class TestFlagMailbox:
+    """Flag operations act on the requested mailbox, not always INBOX."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("operation", ["add_flags", "remove_flags", "replace_flags"])
+    async def test_handler_selects_requested_mailbox(self, classic_handler, operation):
+        selected = []
+        mock_imap = AsyncMock()
+        mock_imap.uid = AsyncMock(return_value=MagicMock(result="OK", lines=[]))
+
+        @asynccontextmanager
+        async def _conn(select_mailbox="INBOX"):
+            selected.append(select_mailbox)
+            yield mock_imap
+
+        classic_handler.imap_connection = _conn
+        await getattr(classic_handler, operation)(["1"], ["Flagged"], False, "[Gmail]/Trash")
+        assert selected == ["[Gmail]/Trash"]
+
+    @pytest.mark.asyncio
+    async def test_handler_defaults_to_inbox(self, classic_handler):
+        selected = []
+
+        @asynccontextmanager
+        async def _conn(select_mailbox="INBOX"):
+            selected.append(select_mailbox)
+            yield AsyncMock(uid=AsyncMock(return_value=MagicMock(result="OK", lines=[])))
+
+        classic_handler.imap_connection = _conn
+        await classic_handler.add_flags(["1"], ["Seen"])
+        assert selected == ["INBOX"]
+
+    def test_cli_passes_mailbox(self):
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from mcp_email_server.cli import app
+
+        handler = MagicMock()
+        handler.add_flags = AsyncMock(return_value={"5": True})
+        with patch("mcp_email_server.cli.flags.dispatch_handler", return_value=handler):
+            result = CliRunner().invoke(
+                app, ["flags", "add", "-a", "acct", "-f", "Flagged", "--mailbox", "Archive", "5"]
+            )
+        assert result.exit_code == 0, result.output
+        handler.add_flags.assert_awaited_once_with(["5"], ["Flagged"], False, "Archive")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("tool_name", ["add_email_flags", "remove_email_flags", "replace_email_flags"])
+    async def test_mcp_tools_pass_mailbox(self, tool_name):
+        from unittest.mock import patch
+
+        from mcp_email_server import app as app_module
+
+        handler = MagicMock()
+        method = tool_name.replace("_email", "")
+        setattr(handler, method, AsyncMock(return_value={"5": True}))
+        with patch("mcp_email_server.app.dispatch_handler", return_value=handler):
+            await getattr(app_module, tool_name)("acct", ["5"], ["Flagged"], False, "Archive")
+        getattr(handler, method).assert_awaited_once_with(["5"], ["Flagged"], False, "Archive")

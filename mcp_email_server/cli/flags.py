@@ -23,7 +23,7 @@ def _run_flag_operation(
     handler = dispatch_handler(account)
     id_strings = [str(eid) for eid in email_ids]
     method = getattr(handler, operation)
-    results = asyncio.run(method(id_strings, flags, silent))
+    results = asyncio.run(method(id_strings, flags, silent, mailbox))
     successful = sum(results.values())
     output = {
         "results": results,

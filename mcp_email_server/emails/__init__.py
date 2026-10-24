@@ -177,15 +177,21 @@ class EmailHandler(abc.ABC):
         """
 
     @abc.abstractmethod
-    async def add_flags(self, email_ids: list[str], flags: list[str], silent: bool = False) -> dict[str, bool]:
+    async def add_flags(
+        self, email_ids: list[str], flags: list[str], silent: bool = False, mailbox: str = "INBOX"
+    ) -> dict[str, bool]:
         """Add flags to emails."""
 
     @abc.abstractmethod
-    async def remove_flags(self, email_ids: list[str], flags: list[str], silent: bool = False) -> dict[str, bool]:
+    async def remove_flags(
+        self, email_ids: list[str], flags: list[str], silent: bool = False, mailbox: str = "INBOX"
+    ) -> dict[str, bool]:
         """Remove flags from emails."""
 
     @abc.abstractmethod
-    async def replace_flags(self, email_ids: list[str], flags: list[str], silent: bool = False) -> dict[str, bool]:
+    async def replace_flags(
+        self, email_ids: list[str], flags: list[str], silent: bool = False, mailbox: str = "INBOX"
+    ) -> dict[str, bool]:
         """Replace all flags on emails."""
 
     @abc.abstractmethod
