@@ -93,6 +93,18 @@ def _parse_search_uids(messages: list | None) -> list[str]:
     return []
 
 
+def _decode_text_part(payload: bytes, charset: str) -> str:
+    """Decode a text part with its declared charset, falling back to UTF-8 with replacement.
+
+    An unknown charset label (e.g. charset=x-bogus) raises LookupError rather than
+    UnicodeDecodeError; both fall back so one bad part can't make the message unreadable.
+    """
+    try:
+        return payload.decode(charset)
+    except (LookupError, UnicodeDecodeError):
+        return payload.decode("utf-8", errors="replace")
+
+
 def _is_attached_message(part) -> bool:
     """Whether a part is an encapsulated email (message/rfc822), e.g. a forward-as-attachment."""
     return part.get_content_type() == "message/rfc822"
@@ -490,19 +502,13 @@ class EmailClient:
                     body_part = part.get_payload(decode=True)
                     if body_part:
                         charset = part.get_content_charset("utf-8")
-                        try:
-                            body += body_part.decode(charset)
-                        except UnicodeDecodeError:
-                            body += body_part.decode("utf-8", errors="replace")
+                        body += _decode_text_part(body_part, charset)
                 # Collect HTML as fallback
                 elif content_type == "text/html" and not body:
                     html_part = part.get_payload(decode=True)
                     if html_part:
                         charset = part.get_content_charset("utf-8")
-                        try:
-                            html_body += html_part.decode(charset)
-                        except UnicodeDecodeError:
-                            html_body += html_part.decode("utf-8", errors="replace")
+                        html_body += _decode_text_part(html_part, charset)
 
             # Fall back to HTML if no plain text found
             if not body and html_body:
@@ -517,10 +523,7 @@ class EmailClient:
             payload = email_message.get_payload(decode=True)
             if payload:
                 charset = email_message.get_content_charset("utf-8")
-                try:
-                    text = payload.decode(charset)
-                except UnicodeDecodeError:
-                    text = payload.decode("utf-8", errors="replace")
+                text = _decode_text_part(payload, charset)
 
                 body = _strip_html(text) if content_type == "text/html" else text
         limit = truncate_body if truncate_body is not None else MAX_BODY_LENGTH
@@ -2162,28 +2165,19 @@ class ClassicEmailHandler(EmailHandler):
                         payload = part.get_payload(decode=True)
                         if payload:
                             charset = part.get_content_charset("utf-8")
-                            try:
-                                text_body = payload.decode(charset)
-                            except UnicodeDecodeError:
-                                text_body = payload.decode("utf-8", errors="replace")
+                            text_body = _decode_text_part(payload, charset)
                     elif content_type == "text/html" and not html_body:
                         payload = part.get_payload(decode=True)
                         if payload:
                             charset = part.get_content_charset("utf-8")
-                            try:
-                                html_body = payload.decode(charset)
-                            except UnicodeDecodeError:
-                                html_body = payload.decode("utf-8", errors="replace")
+                            html_body = _decode_text_part(payload, charset)
             # A single-part message that is one attached file has no body text to save.
             elif not _is_attachment_part(email_message):
                 content_type = email_message.get_content_type()
                 payload = email_message.get_payload(decode=True)
                 if payload:
                     charset = email_message.get_content_charset("utf-8")
-                    try:
-                        decoded = payload.decode(charset)
-                    except UnicodeDecodeError:
-                        decoded = payload.decode("utf-8", errors="replace")
+                    decoded = _decode_text_part(payload, charset)
                     if content_type == "text/html":
                         html_body = decoded
                     else:

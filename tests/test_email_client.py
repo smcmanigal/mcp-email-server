@@ -931,3 +931,30 @@ class TestAttachedMessage:
         assert b"inner secret body" in saved
         assert b"Subject: Quarterly numbers" in saved
         assert result["mime_type"] == "message/rfc822"
+
+
+class TestUnknownCharset:
+    """An unknown charset label must not make the whole message unreadable."""
+
+    _SINGLE = (
+        b"From: a@example.com\r\nSubject: Odd\r\nContent-Type: text/plain; charset=x-bogus\r\n\r\nHello caf\xc3\xa9\r\n"
+    )
+    _MULTI = (
+        b"From: a@example.com\r\nSubject: Odd\r\nMIME-Version: 1.0\r\n"
+        b'Content-Type: multipart/alternative; boundary="b"\r\n\r\n'
+        b"--b\r\nContent-Type: text/plain; charset=x-bogus\r\n\r\nPlain caf\xc3\xa9\r\n"
+        b"--b\r\nContent-Type: text/html; charset=x-bogus\r\n\r\n<p>Html</p>\r\n--b--\r\n"
+    )
+
+    def test_single_part_falls_back_to_utf8(self, email_client):
+        assert email_client._parse_email_data(self._SINGLE)["body"].strip() == "Hello café"
+
+    def test_multipart_falls_back_to_utf8(self, email_client):
+        assert email_client._parse_email_data(self._MULTI)["body"].strip() == "Plain café"
+
+    def test_invalid_bytes_are_replaced_not_raised(self):
+        from mcp_email_server.emails.classic import _decode_text_part
+
+        assert _decode_text_part(b"bad \xff byte", "x-bogus") == "bad � byte"
+        assert _decode_text_part(b"bad \xff byte", "utf-8") == "bad � byte"
+        assert _decode_text_part("é".encode("latin-1"), "latin-1") == "é"
