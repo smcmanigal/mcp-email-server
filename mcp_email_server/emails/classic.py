@@ -102,32 +102,38 @@ def _is_attachment_part(part) -> bool:
     return "attachment" in content_disposition or "inline" in content_disposition
 
 
+_IMAP_ID_TIMEOUT = 10
+
+
 async def _send_imap_id(imap: aioimaplib.IMAP4 | aioimaplib.IMAP4_SSL) -> None:
-    """Send IMAP ID command with fallback for strict servers like 163.com.
+    """Send the RFC 2971 ID command, only to servers that advertise ID.
 
-    aioimaplib's id() method sends ID command with spaces between parentheses
-    and content (e.g., 'ID ( "name" "value" )'), which some strict IMAP servers
-    like 163.com reject with 'BAD Parse command error'.
+    Some servers require ID before SELECT (e.g. 163.com). We send the compact
+    '("name" "value" ...)' form directly: aioimaplib's id() emits '( "name" ... )', which
+    strict servers reject. Servers without ID can answer with an untagged BAD that never
+    completes the command (e.g. ukr.net), stalling the connection until the IMAP timeout,
+    so the command is skipped when ID is not advertised and is bounded by a short timeout.
+    Call after _imap_authenticate, which refreshes the capability list.
 
-    This function first tries the standard id() method, and if it fails,
-    falls back to sending a raw command with correct format.
-
-    See: https://github.com/ai-zerolab/mcp-email-server/issues/85
+    See: https://github.com/ai-zerolab/mcp-email-server/issues/85 and #217
     """
+    if not _imap_has_capability(imap, "ID"):
+        logger.debug("IMAP server does not advertise ID; skipping ID command")
+        return
     try:
-        response = await imap.id(name="mcp-email-server", version="1.0.0")
-        if response.result != "OK":
-            # Fallback for strict servers (e.g., 163.com)
-            # Send raw command with correct parenthesis format
-            await imap.protocol.execute(
-                aioimaplib.Command(
-                    "ID",
-                    imap.protocol.new_tag(),
-                    '("name" "mcp-email-server" "version" "1.0.0")',
-                )
+        response = await imap.protocol.execute(
+            aioimaplib.Command(
+                "ID",
+                imap.protocol.new_tag(),
+                '("name" "mcp-email-server" "version" "1.0.0")',
+                loop=imap.protocol.loop,
+                timeout=_IMAP_ID_TIMEOUT,
             )
+        )
+        if getattr(response, "result", "OK") != "OK":
+            logger.warning(f"IMAP ID command returned {response.result}: {response.lines}")
     except Exception as e:
-        logger.warning(f"IMAP ID command failed: {e!s}")
+        logger.warning(f"IMAP ID command failed: {type(e).__name__}: {e!s}")
 
 
 def _create_ssl_context(verify_ssl: bool) -> ssl.SSLContext | None:
