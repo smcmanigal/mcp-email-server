@@ -674,3 +674,32 @@ class TestHandlerErrorHandling:
                 mock_send.assert_called_once()
                 # Append was attempted
                 mock_append.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_append_to_sent_uses_crlf_line_endings():
+    """The Sent copy is an IMAP literal, which requires CRLF (port of upstream #215 part)."""
+    import re
+
+    from mcp_email_server.config import EmailServer
+    from mcp_email_server.emails.classic import EmailClient
+
+    server = EmailServer(user_name="u", password="p", host="imap.example.com", port=993, use_ssl=True)
+    client = EmailClient(server)
+    msg = MIMEText("line one\nline two\n")
+    msg["Subject"] = "Test"
+
+    mock = AsyncMock()
+    mock._client_task = asyncio.get_running_loop().create_future()
+    mock._client_task.set_result(None)
+    mock.login = AsyncMock(return_value=MagicMock(result="OK", lines=[]))
+    mock.select = AsyncMock(return_value=("OK", []))
+    mock.append = AsyncMock(return_value=("OK", []))
+
+    with patch("mcp_email_server.emails.classic.aioimaplib") as mock_aioimaplib:
+        mock_aioimaplib.IMAP4_SSL.return_value = mock
+        assert await client.append_to_sent(msg, server, "Sent") is True
+
+    payload = mock.append.call_args.args[0]
+    assert b"\r\n" in payload
+    assert not re.search(rb"(?<!\r)\n", payload)

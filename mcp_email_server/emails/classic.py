@@ -1362,7 +1362,9 @@ class EmailClient:
                     status = result[0] if isinstance(result, tuple) else result
                     if str(status).upper() == "OK":
                         # Folder exists, append the message
-                        msg_bytes = msg.as_bytes()
+                        # IMAP literals must use CRLF line endings (RFC 3501); the default
+                        # compat32 serialization emits bare LF.
+                        msg_bytes = msg.as_bytes(policy=msg.policy.clone(linesep="\r\n"))
                         logger.debug(f"Appending message to '{folder}'")
                         # aioimaplib.append signature: (message_bytes, mailbox, flags, date)
                         append_result = await imap.append(
