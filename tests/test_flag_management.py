@@ -207,3 +207,26 @@ class TestFlagManagement:
             mock_imap.uid.assert_called_once_with("store", "100", "+FLAGS.SILENT", "(\\Seen)")
         finally:
             classic_handler.imap_connection = original
+
+
+class TestFlagValidation:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "bad", ["a) (b", "two words", "inject\r\nA1 LOGOUT", 'quo"te', "back\\slash", "brace{1}", ""]
+    )
+    async def test_invalid_flag_rejected_before_connecting(self, classic_handler, bad):
+        mock_imap = AsyncMock()
+        _patch_imap_connection(classic_handler, mock_imap)
+        with pytest.raises(ValueError, match="Invalid IMAP flag"):
+            await classic_handler.add_flags(["1"], [bad])
+        mock_imap.uid.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_keywords_and_system_flags_sent_as_atoms(self, classic_handler):
+        mock_imap = AsyncMock()
+        mock_imap.uid = AsyncMock(return_value=MagicMock(result="OK", lines=[]))
+        _patch_imap_connection(classic_handler, mock_imap)
+
+        await classic_handler.add_flags(["1"], ["$Label1", "seen", "ProcessedByBot"])
+
+        assert mock_imap.uid.call_args.args == ("store", "1", "+FLAGS", "($Label1 \\Seen ProcessedByBot)")

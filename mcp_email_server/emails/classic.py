@@ -1756,6 +1756,21 @@ class EmailClient:
 _SYSTEM_FLAGS = {name.lower(): f"\\{name}" for name in ("Seen", "Answered", "Flagged", "Deleted", "Draft")}
 
 
+# flag = "\\" atom / atom (RFC 3501): printable ASCII except atom-specials ( ) { SP % * " \\ ]
+_VALID_IMAP_FLAG = re.compile(r"\\?[!#$&\'+-\[^-z|}~]+")
+
+
+def _validate_flags(flags: list[str]) -> None:
+    """Reject flags that are not valid IMAP atoms before they reach the STORE command.
+
+    Without this, input such as 'a) (b' or a value containing CR/LF was spliced into
+    the command line as is.
+    """
+    invalid = [flag for flag in flags if not _VALID_IMAP_FLAG.fullmatch(flag)]
+    if invalid:
+        raise ValueError(f"Invalid IMAP flag(s): {', '.join(repr(f) for f in invalid)}")
+
+
 def _normalize_flags(flags: list[str]) -> list[str]:
     """Normalize flags: system flags get their canonical backslash form, keywords are left as is.
 
@@ -2102,6 +2117,7 @@ class ClassicEmailHandler(EmailHandler):
             return {}
 
         normalized_flags = _normalize_flags(flags)
+        _validate_flags(normalized_flags)
         flags_str = f"({' '.join(normalized_flags)})"
         store_cmd = _build_store_command(operation, silent)
         uid_list = ",".join(str(eid) for eid in email_ids)
