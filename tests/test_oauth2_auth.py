@@ -97,6 +97,52 @@ class TestImapAuthenticate:
         mock_manager.get_access_token.assert_called_once_with("user@example.com")
 
     @pytest.mark.asyncio
+    async def test_capabilities_refreshed_after_oauth2_login(self):
+        """Gmail advertises MOVE/UIDPLUS only after auth, and XOAUTH2 merges no capabilities."""
+        imap = AsyncMock()
+        imap.xoauth2.return_value = MagicMock(result="OK")
+        server = EmailServer(user_name="user@gmail.com", host="imap.gmail.com", port=993)
+        mock_manager = MagicMock()
+        mock_manager.get_access_token.return_value = "tok"
+
+        with patch("mcp_email_server.oauth2.get_token_manager", return_value=mock_manager):
+            await _imap_authenticate(
+                imap, server, auth_type="oauth2", email_address="user@gmail.com", oauth2_provider="google"
+            )
+
+        imap.protocol.capability.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_capabilities_refreshed_after_password_login(self):
+        imap = AsyncMock()
+        imap.login.return_value = MagicMock(result="OK", lines=[])
+        server = EmailServer(user_name="user", password="pass", host="imap.example.com", port=993)
+
+        await _imap_authenticate(imap, server)
+
+        imap.protocol.capability.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_capability_refresh_failure_is_not_fatal(self):
+        imap = AsyncMock()
+        imap.login.return_value = MagicMock(result="OK", lines=[])
+        imap.protocol.capability.side_effect = Exception("BAD")
+        server = EmailServer(user_name="user", password="pass", host="imap.example.com", port=993)
+
+        await _imap_authenticate(imap, server)
+
+    @pytest.mark.asyncio
+    async def test_no_capability_refresh_when_login_fails(self):
+        imap = AsyncMock()
+        imap.login.return_value = MagicMock(result="NO", lines=[])
+        server = EmailServer(user_name="user", password="bad", host="imap.example.com", port=993)
+
+        with pytest.raises(ConnectionError):
+            await _imap_authenticate(imap, server)
+
+        imap.protocol.capability.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_oauth2_auth_failure(self):
         """Test OAuth2 auth raises RuntimeError on failure."""
         imap = AsyncMock()

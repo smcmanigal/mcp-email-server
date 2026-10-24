@@ -198,6 +198,21 @@ async def _imap_authenticate(
                 + (f" ({detail})" if detail else "")
             )
 
+    await _refresh_imap_capabilities(imap)
+
+
+async def _refresh_imap_capabilities(imap) -> None:
+    """Re-read CAPABILITY now that the session is authenticated.
+
+    aioimaplib only knows the pre-auth greeting's capabilities (plus any CAPABILITY in a
+    LOGIN reply; XOAUTH2 merges none). Servers like Gmail advertise MOVE and UIDPLUS only
+    after authentication, so without this every move fell back to COPY + \\Deleted.
+    """
+    try:
+        await imap.protocol.capability()
+    except Exception as e:
+        logger.warning(f"IMAP CAPABILITY refresh after login failed, using pre-auth capabilities: {e!s}")
+
 
 async def _smtp_authenticate(
     smtp,
