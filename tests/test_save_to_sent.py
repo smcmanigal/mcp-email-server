@@ -5,6 +5,7 @@ from email.mime.text import MIMEText
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
 
 from mcp_email_server.config import EmailServer, EmailSettings
 from mcp_email_server.emails.classic import ClassicEmailHandler, EmailClient
@@ -268,8 +269,8 @@ class TestEmailClientAppendToSent:
             use_ssl=True,
         )
 
-    @pytest.fixture
-    def mock_imap_for_append(self):
+    @pytest_asyncio.fixture
+    async def mock_imap_for_append(self):
         """Create a mock IMAP client for append testing."""
         mock = AsyncMock()
         mock._client_task = asyncio.Future()

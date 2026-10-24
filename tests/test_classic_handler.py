@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
 
 from mcp_email_server.config import EmailServer, EmailSettings
 from mcp_email_server.emails.classic import ClassicEmailHandler, EmailClient
@@ -490,8 +491,8 @@ class TestImapConnectionContextManager:
             return patched_cls(email_settings)
         return ClassicEmailHandler(email_settings)
 
-    @pytest.fixture
-    def mock_imap(self):
+    @pytest_asyncio.fixture
+    async def mock_imap(self):
         mock = AsyncMock()
         mock._client_task = asyncio.Future()
         mock._client_task.set_result(None)

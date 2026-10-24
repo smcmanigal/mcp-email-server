@@ -19,13 +19,13 @@ classifiers = [
 ]
 dependencies = [
     "aioimaplib>=2.0.1",
-    "aiosmtplib>=4.0.0",
+    "aiosmtplib>=5.1.2",
     "google-auth>=2.0.0",
     "google-auth-oauthlib>=1.0.0",
     "gradio>=6.0.1",
     "jinja2>=3.1.5",
     "loguru>=0.7.3",
-    "mcp[cli]>=1.23.0,<2",
+    "mcp[cli]>=1.30.0,<2",
     "msal>=1.25.0",
     "pydantic>=2.11.0",
     "pydantic-settings[toml]>=2.11.0",
