@@ -757,8 +757,12 @@ class EmailClient:
         return None
 
     async def _fetch_email_with_formats(self, imap, email_id: str) -> list | None:
-        """Try different fetch formats to get email data."""
-        fetch_formats = ["RFC822", "BODY[]", "BODY.PEEK[]", "(BODY.PEEK[])"]
+        """Try different fetch formats to get email data.
+
+        PEEK forms come first because RFC822 and BODY[] set \\Seen (RFC 3501), so reading
+        would mark the message read. They remain as fallbacks for servers that reject PEEK.
+        """
+        fetch_formats = ["BODY.PEEK[]", "(BODY.PEEK[])", "BODY[]", "RFC822"]
 
         for fetch_format in fetch_formats:
             try:

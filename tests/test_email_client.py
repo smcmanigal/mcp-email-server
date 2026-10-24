@@ -758,3 +758,34 @@ class TestBatchFetchHeaders:
         assert len(result) == 2
         assert result["100"]["subject"] == "First"
         assert result["200"]["subject"] == "Second"
+
+
+class TestFetchEmailWithFormats:
+    _RAW = b"From: a@example.com\r\nSubject: Test\r\n\r\n" + b"Body text. " * 20
+
+    @pytest.mark.asyncio
+    async def test_peek_is_tried_first(self, email_client):
+        """Reading must not set \\Seen, so BODY.PEEK[] is the first fetch attempted."""
+        imap = AsyncMock()
+        imap.uid.return_value = ("OK", [b"1 FETCH (UID 42 BODY[] {300}", bytearray(self._RAW), b")"])
+
+        data = await email_client._fetch_email_with_formats(imap, "42")
+
+        assert data is not None
+        imap.uid.assert_called_once_with("fetch", "42", "BODY.PEEK[]")
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_seen_setting_formats_last(self, email_client):
+        """Servers that reject every PEEK form still get the message via BODY[] then RFC822."""
+        imap = AsyncMock()
+        imap.uid.side_effect = [
+            Exception("BAD"),
+            ("OK", [b"1 FETCH (UID 42)"]),
+            ("NO", []),
+            ("OK", [b"1 FETCH (UID 42 RFC822 {300}", bytearray(self._RAW), b")"]),
+        ]
+
+        data = await email_client._fetch_email_with_formats(imap, "42")
+
+        assert data is not None
+        assert [c.args[2] for c in imap.uid.call_args_list] == ["BODY.PEEK[]", "(BODY.PEEK[])", "BODY[]", "RFC822"]
