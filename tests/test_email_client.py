@@ -1022,3 +1022,20 @@ class TestThreadingHeadersOnRead:
             result = await handler.get_emails_content(["1"])
         assert result.emails[0].in_reply_to == "<b@x.com>"
         assert result.emails[0].references == "<a@x.com> <b@x.com>"
+
+
+class TestFoldedMessageId:
+    _RAW = (
+        b"From: a@example.com\r\nSubject: x\r\nMessage-ID:\r\n"
+        b"\t<BN6PR1801MB1985@BN6PR1801MB1985.namprd18.prod.outlook.com>\r\n\r\nbody\r\n"
+    )
+
+    def test_body_parse_unfolds_message_id(self, email_client):
+        assert email_client._parse_email_data(self._RAW)["message_id"] == (
+            "<BN6PR1801MB1985@BN6PR1801MB1985.namprd18.prod.outlook.com>"
+        )
+
+    def test_header_parse_unfolds_message_id(self, email_client):
+        assert email_client._parse_headers("1", self._RAW)["message_id"] == (
+            "<BN6PR1801MB1985@BN6PR1801MB1985.namprd18.prod.outlook.com>"
+        )

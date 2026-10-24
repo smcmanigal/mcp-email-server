@@ -471,7 +471,7 @@ class EmailClient:
         date_str = email_message.get("Date", "")
 
         # Extract Message-ID for reply threading
-        message_id = email_message.get("Message-ID")
+        message_id = _unfold_header(email_message.get("Message-ID"))
         # The parent's threading headers, so a reply can build In-Reply-To and References
         in_reply_to = _unfold_header(email_message.get("In-Reply-To"))
         references = _unfold_header(email_message.get("References"))
@@ -608,7 +608,9 @@ class EmailClient:
             date_str = email_message.get("Date", "")
             # Expose Message-ID for reply threading / de-duplication (full-body parse
             # already sets this in _parse_email_data; mirror it on the header path).
-            message_id = email_message.get("Message-ID")
+            # Unfolded: Outlook folds a long Message-ID onto a continuation line, which
+            # would otherwise come back with a leading tab.
+            message_id = _unfold_header(email_message.get("Message-ID"))
 
             to_addresses = self._parse_recipients(email_message)
             date = self._parse_date(date_str)
