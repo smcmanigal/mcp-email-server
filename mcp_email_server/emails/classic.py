@@ -214,6 +214,24 @@ async def _refresh_imap_capabilities(imap) -> None:
         logger.warning(f"IMAP CAPABILITY refresh after login failed, using pre-auth capabilities: {e!s}")
 
 
+async def _select_or_raise(imap, mailbox: str):
+    """SELECT mailbox and raise a readable error if the server refuses it.
+
+    aioimaplib returns NO/BAD instead of raising. Unchecked, a mistyped or missing mailbox
+    left the session in AUTH state and the next command failed with the misleading
+    "command UID illegal in state AUTH".
+    """
+    response = await imap.select(_quote_mailbox(mailbox))
+    result = getattr(response, "result", None)
+    if isinstance(result, str) and result != "OK":
+        detail = " ".join(
+            line.decode("utf-8", errors="replace") if isinstance(line, bytes) else str(line)
+            for line in (getattr(response, "lines", None) or [])
+        ).strip()
+        raise ValueError(f"Mailbox {mailbox!r} could not be selected: {result}" + (f" ({detail})" if detail else ""))
+    return response
+
+
 def _imap_has_capability(imap, capability: str) -> bool:
     try:
         return capability in imap.protocol.capabilities
@@ -656,7 +674,7 @@ class EmailClient:
                 self.oauth2_client_secret,
             )
             await _send_imap_id(imap)
-            await imap.select(_quote_mailbox(mailbox))
+            await _select_or_raise(imap, mailbox)
             search_criteria = self._build_search_criteria(
                 before,
                 since,
@@ -715,7 +733,7 @@ class EmailClient:
                 self.oauth2_client_secret,
             )
             await _send_imap_id(imap)
-            await imap.select(_quote_mailbox(mailbox))
+            await _select_or_raise(imap, mailbox)
 
             search_criteria = self._build_search_criteria(
                 before,
@@ -845,7 +863,7 @@ class EmailClient:
                 self.oauth2_client_secret,
             )
             await _send_imap_id(imap)
-            await imap.select(_quote_mailbox(mailbox))
+            await _select_or_raise(imap, mailbox)
 
             # Fetch the specific email by UID
             data = await self._fetch_email_with_formats(imap, email_id)
@@ -919,7 +937,7 @@ class EmailClient:
                 self.oauth2_client_secret,
             )
             await _send_imap_id(imap)
-            await imap.select(_quote_mailbox(mailbox))
+            await _select_or_raise(imap, mailbox)
 
             data = await self._fetch_email_with_formats(imap, email_id)
             if not data:
@@ -1289,7 +1307,7 @@ class EmailClient:
                 self.oauth2_client_secret,
             )
             await _send_imap_id(imap)
-            await imap.select(_quote_mailbox(mailbox))
+            await _select_or_raise(imap, mailbox)
 
             for email_id in email_ids:
                 try:
@@ -1382,7 +1400,7 @@ class EmailClient:
                 logger.error(f"Failed to create folder: {target_folder}")
                 return {"moved": [], "failed": email_ids}
 
-            await imap.select(_quote_mailbox(source_mailbox))
+            await _select_or_raise(imap, source_mailbox)
             moved, failed = await self._move_uids(imap, email_ids, target_folder)
             return {"moved": moved, "failed": failed}
 
@@ -1589,7 +1607,7 @@ class EmailClient:
                 self.oauth2_client_secret,
             )
             await _send_imap_id(imap)
-            await imap.select(_quote_mailbox(source_mailbox))
+            await _select_or_raise(imap, source_mailbox)
 
             if senders and subjects:
                 from_uids = await self._search_by_field(imap, "FROM", senders, since)
@@ -2023,7 +2041,7 @@ class ClassicEmailHandler(EmailHandler):
                 client.oauth2_client_secret,
             )
             await _send_imap_id(imap)
-            await imap.select(_quote_mailbox(mailbox))
+            await _select_or_raise(imap, mailbox)
 
             data = await client._fetch_email_with_formats(imap, email_id)
             if not data:
