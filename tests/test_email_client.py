@@ -862,3 +862,29 @@ class TestShortMessageLiteral:
     def test_length_mismatch_is_not_trusted(self, email_client):
         data = [b"1 FETCH (UID 7 BODY[] {500}", bytearray(self._SHORT), b")"]
         assert not email_client._check_email_content(data)
+
+
+class TestParseRecipients:
+    @staticmethod
+    def _msg(**headers):
+        from email.message import EmailMessage
+
+        msg = EmailMessage()
+        for name, value in headers.items():
+            msg[name] = value
+        return msg
+
+    def test_comma_in_quoted_display_name_is_one_recipient(self):
+        msg = self._msg(To='"Smith, John" <j@x.com>, b@y.com', Cc='"Doe, Jane" <jane@z.com>')
+        assert EmailClient._parse_recipients(msg) == ['"Smith, John" <j@x.com>', "b@y.com", '"Doe, Jane" <jane@z.com>']
+
+    def test_plain_and_named_addresses_unchanged(self):
+        msg = self._msg(To="a@x.com, Bob Jones <bob@y.com>")
+        assert EmailClient._parse_recipients(msg) == ["a@x.com", "Bob Jones <bob@y.com>"]
+
+    def test_group_syntax_lists_members(self):
+        msg = self._msg(To="Team: a@x.com, b@x.com;")
+        assert EmailClient._parse_recipients(msg) == ["a@x.com", "b@x.com"]
+
+    def test_no_recipients(self):
+        assert EmailClient._parse_recipients(self._msg(Subject="x")) == []

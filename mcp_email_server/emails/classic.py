@@ -11,6 +11,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from email.header import Header
+from email.headerregistry import Address
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -358,14 +359,26 @@ class EmailClient:
 
     @staticmethod
     def _parse_recipients(email_message) -> list[str]:
-        """Extract recipient addresses from To and Cc headers."""
+        """Extract recipient addresses from To and Cc headers.
+
+        Parsed as RFC 5322 address lists, so a quoted display name containing a comma
+        ("Smith, John" <j@x.com>) stays one recipient.
+        """
         recipients = []
-        to_header = email_message.get("To", "")
-        if to_header:
-            recipients = [addr.strip() for addr in to_header.split(",")]
-        cc_header = email_message.get("Cc", "")
-        if cc_header:
-            recipients.extend([addr.strip() for addr in cc_header.split(",")])
+        for header in ("To", "Cc"):
+            value = email_message.get(header, "")
+            if not value:
+                continue
+            addresses = [(name, addr) for name, addr in email.utils.getaddresses([str(value)]) if addr]
+            if not addresses:
+                # Unparseable header: keep the old best-effort split rather than drop it.
+                recipients.extend(part.strip() for part in str(value).split(",") if part.strip())
+                continue
+            for name, addr in addresses:
+                try:
+                    recipients.append(str(Address(display_name=name, addr_spec=addr)))
+                except (ValueError, IndexError, TypeError):
+                    recipients.append(f"{name} <{addr}>" if name else addr)
         return recipients
 
     @staticmethod
