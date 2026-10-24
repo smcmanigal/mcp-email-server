@@ -90,6 +90,18 @@ def _parse_search_uids(messages: list | None) -> list[str]:
     return []
 
 
+def _is_attachment_part(part) -> bool:
+    """Whether a MIME part is listed as an attachment: a filename plus an attachment or inline disposition.
+
+    Applies to a single-part message's own top-level part too, such as a scanner
+    email whose whole body is one PDF.
+    """
+    if not part.get_filename():
+        return False
+    content_disposition = str(part.get("Content-Disposition", ""))
+    return "attachment" in content_disposition or "inline" in content_disposition
+
+
 async def _send_imap_id(imap: aioimaplib.IMAP4 | aioimaplib.IMAP4_SSL) -> None:
     """Send IMAP ID command with fallback for strict servers like 163.com.
 
@@ -339,12 +351,10 @@ class EmailClient:
         if email_message.is_multipart():
             for part in email_message.walk():
                 content_type = part.get_content_type()
-                content_disposition = str(part.get("Content-Disposition", ""))
 
                 # Handle attachments (explicit attachments and inline parts with filenames)
-                filename = part.get_filename()
-                if filename and ("attachment" in content_disposition or "inline" in content_disposition):
-                    attachments.append(filename)
+                if _is_attachment_part(part):
+                    attachments.append(part.get_filename())
                 # Handle text parts - prefer text/plain
                 elif content_type == "text/plain":
                     body_part = part.get_payload(decode=True)
@@ -367,6 +377,10 @@ class EmailClient:
             # Fall back to HTML if no plain text found
             if not body and html_body:
                 body = _strip_html(html_body)
+        elif _is_attachment_part(email_message):
+            # The whole message is one attached file (e.g. a scanned PDF); list it
+            # as an attachment rather than decoding its bytes as the body.
+            attachments.append(email_message.get_filename())
         else:
             # Handle single-part emails
             content_type = email_message.get_content_type()
@@ -875,15 +889,19 @@ class EmailClient:
             mime_type = None
             normalized_attachment_name = self._normalize_attachment_name(attachment_name)
 
-            if email_message.is_multipart():
-                for part in email_message.walk():
-                    filename = part.get_filename()
-                    if not isinstance(filename, str):
-                        continue
-                    if self._normalize_attachment_name(filename) == normalized_attachment_name:
-                        attachment_data = part.get_payload(decode=True)
-                        mime_type = part.get_content_type()
-                        break
+            # walk() yields the message itself first, so a single-part message whose
+            # whole body is the attachment is matched too. Multipart containers have
+            # no payload of their own to save.
+            for part in email_message.walk():
+                if part.is_multipart():
+                    continue
+                filename = part.get_filename()
+                if not isinstance(filename, str):
+                    continue
+                if self._normalize_attachment_name(filename) == normalized_attachment_name:
+                    attachment_data = part.get_payload(decode=True)
+                    mime_type = part.get_content_type()
+                    break
 
             if attachment_data is None:
                 msg = f"Attachment '{attachment_name}' not found in email {email_id}"
@@ -1967,7 +1985,8 @@ class ClassicEmailHandler(EmailHandler):
                                 html_body = payload.decode(charset)
                             except UnicodeDecodeError:
                                 html_body = payload.decode("utf-8", errors="replace")
-            else:
+            # A single-part message that is one attached file has no body text to save.
+            elif not _is_attachment_part(email_message):
                 content_type = email_message.get_content_type()
                 payload = email_message.get_payload(decode=True)
                 if payload:

@@ -398,3 +398,69 @@ class TestUnicodeAttachmentNameMatching:
                         attachment_name="Different.xlsx",
                         save_path=str(save_path),
                     )
+
+
+class TestSinglePartAttachment:
+    """A message whose whole body is one attached file (port of upstream #271).
+
+    Scanners and some mobile clients send a PDF as the only MIME part, with no
+    multipart wrapper. It must be listed and downloadable, not read as body text.
+    """
+
+    PDF_BYTES = b"%PDF-1.4 scanned page"
+
+    @classmethod
+    def _build_single_part_attachment(cls, disposition: str = "attachment") -> bytes:
+        from email.mime.application import MIMEApplication
+
+        msg = MIMEApplication(cls.PDF_BYTES, _subtype="pdf")
+        msg.add_header("Content-Disposition", disposition, filename="scan.pdf")
+        msg["Subject"] = "Scan"
+        msg["From"] = "scanner@example.com"
+        msg["To"] = "me@example.com"
+        msg["Date"] = "Fri, 23 Oct 2026 10:00:00 +0000"
+        return msg.as_bytes()
+
+    @pytest.mark.parametrize("disposition", ["attachment", "inline"])
+    def test_listed_as_attachment_not_body(self, email_client, disposition):
+        result = email_client._parse_email_data(self._build_single_part_attachment(disposition), email_id="7")
+
+        assert result["attachments"] == ["scan.pdf"]
+        assert result["body"] == ""
+
+    def test_plain_single_part_email_keeps_its_body(self, email_client):
+        from email.mime.text import MIMEText
+
+        msg = MIMEText("Just a note.", "plain", "utf-8")
+        msg["Subject"] = "Note"
+        msg["From"] = "a@example.com"
+
+        result = email_client._parse_email_data(msg.as_bytes(), email_id="8")
+
+        assert result["attachments"] == []
+        assert result["body"] == "Just a note."
+
+    @pytest.mark.asyncio
+    async def test_download_succeeds(self, email_client, tmp_path):
+        import asyncio
+
+        raw_email = self._build_single_part_attachment()
+        save_path = tmp_path / "scan.pdf"
+
+        mock_imap = AsyncMock()
+        mock_imap._client_task = asyncio.Future()
+        mock_imap._client_task.set_result(None)
+        mock_imap.wait_hello_from_server = AsyncMock()
+        mock_imap.login = AsyncMock(return_value=MagicMock(result="OK", lines=[]))
+        mock_imap.select = AsyncMock(return_value=("OK", [b"1"]))
+        mock_imap.logout = AsyncMock()
+
+        fetch_data = [b"1 FETCH (BODY[] {%d}" % len(raw_email), bytearray(raw_email), b")"]
+        with patch.object(email_client, "_fetch_email_with_formats", return_value=fetch_data):
+            with patch.object(email_client, "imap_class", return_value=mock_imap):
+                result = await email_client.download_attachment(
+                    email_id="1", attachment_name="scan.pdf", save_path=str(save_path)
+                )
+
+        assert result["mime_type"] == "application/pdf"
+        assert save_path.read_bytes() == self.PDF_BYTES

@@ -233,3 +233,31 @@ async def test_save_email_plain_text_markdown(mock_handler, temp_dir):
         content = f.read()
     assert "This is plain text." in content
     assert "No HTML here." in content
+
+
+@pytest.mark.asyncio
+async def test_save_single_part_attachment_writes_no_body(mock_handler, temp_dir):
+    """A message that is one attached file saves headers only, not the file's bytes as text."""
+    from email.mime.application import MIMEApplication
+
+    msg = MIMEApplication(b"%PDF-1.4 scanned page", _subtype="pdf")
+    msg.add_header("Content-Disposition", "attachment", filename="scan.pdf")
+    msg["Subject"] = "Scan"
+    msg["From"] = "scanner@example.com"
+    msg["Date"] = "Fri, 23 Oct 2026 10:00:00 +0000"
+    raw_email = msg.as_bytes()
+
+    file_path = os.path.join(temp_dir, "scan.md")
+    mock_imap = _create_mock_imap()
+    mock_handler.incoming_client._imap_connect = MagicMock(return_value=mock_imap)
+    mock_handler.incoming_client._fetch_email_with_formats = AsyncMock(
+        return_value=[b"1 FETCH (BODY[] {100}", bytearray(raw_email)]
+    )
+    mock_handler.incoming_client._extract_raw_email = MagicMock(return_value=raw_email)
+
+    await mock_handler.save_email_to_file(email_id="9", file_path=file_path, output_format="markdown")
+
+    with open(file_path) as f:
+        content = f.read()
+    assert "Subject: Scan" in content
+    assert "%PDF" not in content
