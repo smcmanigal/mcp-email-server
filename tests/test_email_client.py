@@ -65,40 +65,23 @@ class TestEmailClient:
 
     def test_parse_email_data_with_attachments(self):
         """Test parsing email with attachments."""
-        # This would require creating a multipart email with attachments
-        # For simplicity, we'll mock the email parsing
-        with patch("email.parser.BytesParser.parsebytes") as mock_parse:
-            mock_email = MagicMock()
-            mock_email.get.side_effect = lambda x, default=None: {
-                "Subject": "Test Subject",
-                "From": "sender@example.com",
-                "Date": email.utils.formatdate(),
-            }.get(x, default)
-            mock_email.is_multipart.return_value = True
+        from email.message import EmailMessage
 
-            # Mock parts
-            text_part = MagicMock()
-            text_part.get_content_type.return_value = "text/plain"
-            text_part.get.return_value = ""  # Not an attachment
-            text_part.get_payload.return_value = b"This is the email body"
-            text_part.get_content_charset.return_value = "utf-8"
+        msg = EmailMessage()
+        msg["Subject"] = "Test Subject"
+        msg["From"] = "sender@example.com"
+        msg["Date"] = email.utils.formatdate()
+        msg.set_content("This is the email body")
+        msg.add_attachment(b"%PDF-1.4", maintype="application", subtype="pdf", filename="test.pdf")
 
-            attachment_part = MagicMock()
-            attachment_part.get_content_type.return_value = "application/pdf"
-            attachment_part.get.return_value = "attachment; filename=test.pdf"
-            attachment_part.get_filename.return_value = "test.pdf"
+        client = EmailClient(MagicMock())
+        result = client._parse_email_data(msg.as_bytes())
 
-            mock_email.walk.return_value = [text_part, attachment_part]
-            mock_parse.return_value = mock_email
-
-            client = EmailClient(MagicMock())
-            result = client._parse_email_data(b"dummy email content")
-
-            assert result["subject"] == "Test Subject"
-            assert result["from"] == "sender@example.com"
-            assert result["body"] == "This is the email body"
-            assert isinstance(result["date"], datetime)
-            assert result["attachments"] == ["test.pdf"]
+        assert result["subject"] == "Test Subject"
+        assert result["from"] == "sender@example.com"
+        assert result["body"].strip() == "This is the email body"
+        assert isinstance(result["date"], datetime)
+        assert result["attachments"] == ["test.pdf"]
 
     def test_build_search_criteria(self):
         """Test building search criteria for IMAP."""
@@ -888,3 +871,63 @@ class TestParseRecipients:
 
     def test_no_recipients(self):
         assert EmailClient._parse_recipients(self._msg(Subject="x")) == []
+
+
+class TestAttachedMessage:
+    """A forwarded email attached as message/rfc822 is an attachment, not part of the body."""
+
+    @staticmethod
+    def _outer(inner_filename=None, inner_subject="Quarterly numbers"):
+        from email.message import EmailMessage
+
+        inner = EmailMessage()
+        inner["Subject"] = inner_subject
+        inner["From"] = "boss@example.com"
+        inner.set_content("inner secret body")
+
+        outer = EmailMessage()
+        outer["Subject"] = "Fwd"
+        outer["From"] = "me@example.com"
+        outer["Date"] = email.utils.formatdate()
+        outer.set_content("outer note")
+        outer.add_attachment(inner, filename=inner_filename) if inner_filename else outer.add_attachment(inner)
+        return outer
+
+    def test_inner_body_does_not_leak_and_is_listed(self, email_client):
+        result = email_client._parse_email_data(self._outer().as_bytes())
+        assert result["body"].strip() == "outer note"
+        assert "inner secret body" not in result["body"]
+        assert result["attachments"] == ["Quarterly numbers.eml"]
+
+    def test_explicit_filename_is_kept(self, email_client):
+        result = email_client._parse_email_data(self._outer(inner_filename="fwd.eml").as_bytes())
+        assert result["attachments"] == ["fwd.eml"]
+
+    def test_unsafe_or_empty_subject_gets_safe_name(self, email_client):
+        assert email_client._parse_email_data(self._outer(inner_subject="a/b\\c").as_bytes())["attachments"] == [
+            "a_b_c.eml"
+        ]
+        assert email_client._parse_email_data(self._outer(inner_subject="").as_bytes())["attachments"] == [
+            "attached-message.eml"
+        ]
+
+    @pytest.mark.asyncio
+    async def test_download_returns_inner_eml_bytes(self, email_client, tmp_path):
+        import asyncio
+
+        raw = self._outer().as_bytes()
+        imap = AsyncMock()
+        imap._client_task = asyncio.get_running_loop().create_future()
+        imap._client_task.set_result(None)
+        imap.login = AsyncMock(return_value=MagicMock(result="OK", lines=[]))
+        imap.select = AsyncMock(return_value=MagicMock(result="OK", lines=[]))
+        email_client.imap_class = MagicMock(return_value=imap)
+        save_path = tmp_path / "out.eml"
+
+        with patch.object(email_client, "_fetch_email_with_formats", return_value=[b"x", bytearray(raw)]):
+            result = await email_client.download_attachment("1", "Quarterly numbers.eml", save_path)
+
+        saved = save_path.read_bytes()
+        assert b"inner secret body" in saved
+        assert b"Subject: Quarterly numbers" in saved
+        assert result["mime_type"] == "message/rfc822"

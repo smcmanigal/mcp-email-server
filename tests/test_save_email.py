@@ -261,3 +261,31 @@ async def test_save_single_part_attachment_writes_no_body(mock_handler, temp_dir
         content = f.read()
     assert "Subject: Scan" in content
     assert "%PDF" not in content
+
+
+@pytest.mark.asyncio
+async def test_save_attached_email_body_does_not_leak(mock_handler, temp_dir):
+    """An attached message/rfc822 must not contribute its text to the saved body."""
+    from email.message import EmailMessage
+
+    inner = EmailMessage()
+    inner["Subject"] = "Inner"
+    inner.set_content("inner secret body")
+    outer = EmailMessage()
+    outer["Subject"] = "Fwd"
+    outer["From"] = "me@example.com"
+    outer.add_attachment(inner)  # no text part of its own
+    raw_email = outer.as_bytes()
+
+    file_path = os.path.join(temp_dir, "email.txt")
+    mock_imap = _create_mock_imap()
+    mock_handler.incoming_client._imap_connect = MagicMock(return_value=mock_imap)
+    mock_handler.incoming_client._fetch_email_with_formats = AsyncMock(
+        return_value=[b"1 FETCH (BODY[] {100}", bytearray(raw_email)]
+    )
+    mock_handler.incoming_client._extract_raw_email = MagicMock(return_value=raw_email)
+
+    await mock_handler.save_email_to_file(email_id="9", file_path=file_path, output_format="text")
+
+    with open(file_path) as f:
+        assert "inner secret body" not in f.read()

@@ -93,12 +93,55 @@ def _parse_search_uids(messages: list | None) -> list[str]:
     return []
 
 
+def _is_attached_message(part) -> bool:
+    """Whether a part is an encapsulated email (message/rfc822), e.g. a forward-as-attachment."""
+    return part.get_content_type() == "message/rfc822"
+
+
+def _walk_message_parts(message):
+    """Like Message.walk(), but an attached message/rfc822 is yielded as one part, not entered.
+
+    walk() descends into encapsulated messages, so their text leaked into the outer body.
+    """
+    yield message
+    if _is_attached_message(message) or not message.is_multipart():
+        return
+    for sub_part in message.get_payload():
+        yield from _walk_message_parts(sub_part)
+
+
+def _attachment_filename(part) -> str | None:
+    """The name an attachment is listed and downloaded under.
+
+    An attached email often has no filename; name it after its subject (or a fixed
+    fallback) with a .eml extension so it can be listed and downloaded.
+    """
+    filename = part.get_filename()
+    if filename or not _is_attached_message(part):
+        return filename
+    inner = part.get_payload()
+    subject = str(inner[0].get("Subject", "")) if isinstance(inner, list) and inner else ""
+    stem = re.sub(r"[^\w .()-]+", "_", subject).strip(" ._")[:80]
+    return f"{stem or 'attached-message'}.eml"
+
+
+def _attachment_payload(part) -> bytes | None:
+    """Decoded bytes of an attachment part; an attached email is returned as its raw .eml bytes."""
+    if _is_attached_message(part):
+        inner = part.get_payload()
+        return inner[0].as_bytes() if isinstance(inner, list) and inner else None
+    return part.get_payload(decode=True)
+
+
 def _is_attachment_part(part) -> bool:
-    """Whether a MIME part is listed as an attachment: a filename plus an attachment or inline disposition.
+    """Whether a MIME part is listed as an attachment: a filename plus an attachment or inline disposition,
+    or an attached email (message/rfc822).
 
     Applies to a single-part message's own top-level part too, such as a scanner
     email whose whole body is one PDF.
     """
+    if _is_attached_message(part):
+        return True
     if not part.get_filename():
         return False
     content_disposition = str(part.get("Content-Disposition", ""))
@@ -436,12 +479,12 @@ class EmailClient:
             return text.strip()
 
         if email_message.is_multipart():
-            for part in email_message.walk():
+            for part in _walk_message_parts(email_message):
                 content_type = part.get_content_type()
 
-                # Handle attachments (explicit attachments and inline parts with filenames)
+                # Handle attachments (explicit attachments, inline parts with filenames, attached emails)
                 if _is_attachment_part(part):
-                    attachments.append(part.get_filename())
+                    attachments.append(_attachment_filename(part))
                 # Handle text parts - prefer text/plain
                 elif content_type == "text/plain":
                     body_part = part.get_payload(decode=True)
@@ -1004,14 +1047,14 @@ class EmailClient:
             # walk() yields the message itself first, so a single-part message whose
             # whole body is the attachment is matched too. Multipart containers have
             # no payload of their own to save.
-            for part in email_message.walk():
-                if part.is_multipart():
+            for part in _walk_message_parts(email_message):
+                if part.is_multipart() and not _is_attached_message(part):
                     continue
-                filename = part.get_filename()
+                filename = _attachment_filename(part)
                 if not isinstance(filename, str):
                     continue
                 if self._normalize_attachment_name(filename) == normalized_attachment_name:
-                    attachment_data = part.get_payload(decode=True)
+                    attachment_data = _attachment_payload(part)
                     mime_type = part.get_content_type()
                     break
 
@@ -2110,10 +2153,10 @@ class ClassicEmailHandler(EmailHandler):
             html_body = ""
 
             if email_message.is_multipart():
-                for part in email_message.walk():
+                for part in _walk_message_parts(email_message):
                     content_type = part.get_content_type()
                     content_disposition = str(part.get("Content-Disposition", ""))
-                    if "attachment" in content_disposition:
+                    if "attachment" in content_disposition or _is_attached_message(part):
                         continue
                     if content_type == "text/plain" and not text_body:
                         payload = part.get_payload(decode=True)
