@@ -464,3 +464,25 @@ class TestSinglePartAttachment:
 
         assert result["mime_type"] == "application/pdf"
         assert save_path.read_bytes() == self.PDF_BYTES
+
+
+class TestAttachmentMimeType:
+    """Attachments keep their real main type (port of upstream #212 sub-item)."""
+
+    @pytest.mark.parametrize(
+        ("name", "expected"),
+        [
+            ("photo.png", "image/png"),
+            ("notes.txt", "text/plain"),
+            ("report.pdf", "application/pdf"),
+            ("data.unknownext", "application/octet-stream"),
+        ],
+    )
+    def test_content_type(self, email_client, tmp_path, name, expected):
+        path = tmp_path / name
+        path.write_bytes(b"\x89PNG\r\n\x1a\n\x00binary\xff")
+        part = email_client._create_attachment_part(path)
+        assert part.get_content_type() == expected
+        assert part.get_filename() == name
+        assert part["Content-Transfer-Encoding"] == "base64"
+        assert part.get_payload(decode=True) == b"\x89PNG\r\n\x1a\n\x00binary\xff"

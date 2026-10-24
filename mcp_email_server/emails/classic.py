@@ -10,9 +10,10 @@ import unicodedata
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from email import encoders
 from email.header import Header
 from email.headerregistry import Address
-from email.mime.application import MIMEApplication
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.parser import BytesParser
@@ -1120,7 +1121,7 @@ class EmailClient:
 
         return path
 
-    def _create_attachment_part(self, path: Path) -> MIMEApplication:
+    def _create_attachment_part(self, path: Path) -> MIMEBase:
         """Create MIME attachment part from file."""
         with open(path, "rb") as f:
             file_data = f.read()
@@ -1129,7 +1130,12 @@ class EmailClient:
         if mime_type is None:
             mime_type = "application/octet-stream"
 
-        attachment_part = MIMEApplication(file_data, _subtype=mime_type.split("/")[1])
+        # Keep the guessed main type (image/png, text/plain); MIMEApplication forced
+        # application/* and produced types like application/png. Base64 keeps bytes exact.
+        maintype, subtype = mime_type.split("/", 1)
+        attachment_part = MIMEBase(maintype, subtype)
+        attachment_part.set_payload(file_data)
+        encoders.encode_base64(attachment_part)
         attachment_part.add_header(
             "Content-Disposition",
             "attachment",
