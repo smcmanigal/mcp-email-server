@@ -223,6 +223,27 @@ def _needs_exact_time_filter(value: datetime | None) -> bool:
     return _as_utc(value).time() != datetime.min.time()
 
 
+_INTERNAL_DATE = re.compile(r"\s*(\d{1,2})-([A-Za-z]{3})-(\d{4}) (\d{2}):(\d{2}):(\d{2}) ([+-])(\d{2})(\d{2})\s*")
+
+
+def _parse_internal_date(value: str) -> datetime | None:
+    """Parse an IMAP INTERNALDATE ("17-Jul-1996 02:44:25 -0700") without strptime's locale-dependent %b."""
+    match = _INTERNAL_DATE.fullmatch(value)
+    if not match or match.group(2).upper() not in _IMAP_MONTHS:
+        return None
+    day, mon, year, hour, minute, second, sign, off_h, off_m = match.groups()
+    offset = timedelta(hours=int(off_h), minutes=int(off_m)) * (-1 if sign == "-" else 1)
+    return datetime(
+        int(year),
+        _IMAP_MONTHS.index(mon.upper()) + 1,
+        int(day),
+        int(hour),
+        int(minute),
+        int(second),
+        tzinfo=timezone(offset),
+    )
+
+
 def _reject_unquotable(value: str, what: str) -> None:
     """Raise if value cannot appear in an IMAP quoted string (RFC 3501: no CR, LF or NUL).
 
@@ -849,7 +870,9 @@ class EmailClient:
             if uid_match and date_match:
                 uid = uid_match.group(1).decode()
                 date_str = date_match.group(1).decode().strip()
-                chunk_dates[uid] = datetime.strptime(date_str, "%d-%b-%Y %H:%M:%S %z")
+                parsed = _parse_internal_date(date_str)
+                if parsed is not None:
+                    chunk_dates[uid] = parsed
 
         if total_chunks > 1:
             logger.info(f"Fetched dates chunk {chunk_num}/{total_chunks}: {len(chunk)} UIDs in {chunk_elapsed:.2f}s")

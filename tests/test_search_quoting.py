@@ -88,3 +88,23 @@ class TestImapSearchDate:
                 assert _imap_search_date(datetime(2026, 12, 31)) == "31-DEC-2026"
             finally:
                 locale.setlocale(locale.LC_TIME, original)
+
+
+class TestParseInternalDate:
+    def test_parses_with_offset_and_space_padding(self):
+        from datetime import datetime, timedelta, timezone
+
+        from mcp_email_server.emails.classic import _parse_internal_date
+
+        assert _parse_internal_date("17-Jul-1996 02:44:25 -0700") == datetime(
+            1996, 7, 17, 2, 44, 25, tzinfo=timezone(timedelta(hours=-7))
+        )
+        assert _parse_internal_date(" 5-Mar-2026 09:00:00 +0530") == datetime(
+            2026, 3, 5, 9, 0, tzinfo=timezone(timedelta(hours=5, minutes=30))
+        )
+
+    def test_malformed_is_none(self):
+        from mcp_email_server.emails.classic import _parse_internal_date
+
+        assert _parse_internal_date("17-Foo-1996 02:44:25 -0700") is None
+        assert _parse_internal_date("garbage") is None
