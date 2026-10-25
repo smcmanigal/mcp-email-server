@@ -273,10 +273,12 @@ class TestEmailClient:
         mock_smtp.__aenter__.return_value = mock_smtp
         mock_smtp.__aexit__.return_value = None
         mock_smtp.login = AsyncMock()
-        mock_smtp.send_message = AsyncMock()
+        # Snapshot the headers at send time; the returned Sent copy gains Bcc afterwards
+        sent_headers = {}
+        mock_smtp.send_message = AsyncMock(side_effect=lambda msg, **kwargs: sent_headers.update(msg.items()))
 
         with patch("aiosmtplib.SMTP", return_value=mock_smtp):
-            await email_client.send_email(
+            sent_copy = await email_client.send_email(
                 recipients=["recipient@example.com"],
                 subject="Test Subject",
                 body="Test Body",
@@ -299,7 +301,8 @@ class TestEmailClient:
             assert msg["From"] == email_client.sender
             assert msg["To"] == "recipient@example.com"
             assert msg["Cc"] == "cc@example.com"
-            assert "Bcc" not in msg  # BCC should not be in headers
+            assert "Bcc" not in sent_headers  # never in the delivered message
+            assert sent_copy["Bcc"] == "bcc@example.com"  # kept on the Sent copy
 
             # Check that all recipients are included in the SMTP call
             assert "recipient@example.com" in recipients

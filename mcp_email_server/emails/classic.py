@@ -1512,8 +1512,8 @@ class EmailClient:
         sender_domain = envelope_sender.rsplit("@", 1)[-1]
         msg["Message-Id"] = email.utils.make_msgid(domain=sender_domain)
 
-        # Note: BCC recipients are not added to headers (they remain hidden)
-        # but will be included in the actual recipients for SMTP delivery
+        # Bcc recipients get the SMTP envelope only; the Bcc header is added after
+        # delivery, so it appears in the Sent copy but never in what recipients see.
 
         async with aiosmtplib.SMTP(
             hostname=self.email_server.host,
@@ -1543,6 +1543,9 @@ class EmailClient:
             # Pass the envelope sender explicitly; otherwise aiosmtplib parses it from
             # the From header, which yields "Smith" for a display name like "Smith, John".
             await smtp.send_message(msg, sender=envelope_sender, recipients=all_recipients)
+
+        if bcc:
+            msg["Bcc"] = ", ".join(bcc)
 
         # Return the message for potential saving to Sent folder
         return msg
