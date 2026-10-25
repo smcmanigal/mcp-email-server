@@ -1273,6 +1273,7 @@ source = { editable = "." }
 dependencies = [
     { name = "aioimaplib" },
     { name = "aiosmtplib" },
+    { name = "click" },
     { name = "google-auth" },
     { name = "google-auth-oauthlib" },
     { name = "gradio" },
@@ -1283,6 +1284,8 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings", version = "2.15.0", source = { registry = "https://pypi.org/simple" }, extra = ["toml"], marker = "python_full_version < '3.11'" },
     { name = "pydantic-settings", version = "2.16.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "rich" },
+    { name = "tomli", marker = "python_full_version < '3.11'" },
     { name = "tomli-w" },
     { name = "typer" },
 ]
@@ -1306,6 +1309,7 @@ dev = [
 requires-dist = [
     { name = "aioimaplib", specifier = ">=2.0.1" },
     { name = "aiosmtplib", specifier = ">=5.1.2" },
+    { name = "click", specifier = ">=8.1.0" },
     { name = "google-auth", specifier = ">=2.0.0" },
     { name = "google-auth-oauthlib", specifier = ">=1.0.0" },
     { name = "gradio", specifier = ">=6.0.1" },
@@ -1315,6 +1319,8 @@ requires-dist = [
     { name = "msal", specifier = ">=1.25.0" },
     { name = "pydantic", specifier = ">=2.11.0" },
     { name = "pydantic-settings", extras = ["toml"], specifier = ">=2.11.0" },
+    { name = "rich", specifier = ">=13.0.0" },
+    { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0.0" },
     { name = "tomli-w", specifier = ">=1.2.0" },
     { name = "typer", specifier = ">=0.15.1" },
 ]

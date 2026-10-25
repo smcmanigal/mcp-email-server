@@ -20,6 +20,7 @@ classifiers = [
 dependencies = [
     "aioimaplib>=2.0.1",
     "aiosmtplib>=5.1.2",
+    "click>=8.1.0",
     "google-auth>=2.0.0",
     "google-auth-oauthlib>=1.0.0",
     "gradio>=6.0.1",
@@ -29,6 +30,8 @@ dependencies = [
     "msal>=1.25.0",
     "pydantic>=2.11.0",
     "pydantic-settings[toml]>=2.11.0",
+    "rich>=13.0.0",
+    "tomli>=2.0.0; python_version < '3.11'",
     "tomli-w>=1.2.0",
     "typer>=0.15.1",
 ]
