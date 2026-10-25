@@ -39,7 +39,7 @@ mcp-email-server = "mcp_email_server.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/smcmanigal/mcp-email-server"
-Repository = "https://github.com/ai-zerolab/mcp-email-server"
+Repository = "https://github.com/smcmanigal/mcp-email-server"
 
 [dependency-groups]
 dev = [

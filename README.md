@@ -1,9 +1,8 @@
 # mcp-email-server
 
-[![Release](https://img.shields.io/github/v/release/ai-zerolab/mcp-email-server)](https://img.shields.io/github/v/release/ai-zerolab/mcp-email-server)
-[![Build status](https://img.shields.io/github/actions/workflow/status/ai-zerolab/mcp-email-server/main.yml?branch=main)](https://github.com/ai-zerolab/mcp-email-server/actions/workflows/main.yml?query=branch%3Amain)
-[![Commit activity](https://img.shields.io/github/commit-activity/m/ai-zerolab/mcp-email-server)](https://img.shields.io/github/commit-activity/m/ai-zerolab/mcp-email-server)
-[![License](https://img.shields.io/github/license/ai-zerolab/mcp-email-server)](https://img.shields.io/github/license/ai-zerolab/mcp-email-server)
+[![Build status](https://img.shields.io/github/actions/workflow/status/smcmanigal/mcp-email-server/main.yml?branch=main)](https://github.com/smcmanigal/mcp-email-server/actions/workflows/main.yml?query=branch%3Amain)
+[![Commit activity](https://img.shields.io/github/commit-activity/m/smcmanigal/mcp-email-server)](https://github.com/smcmanigal/mcp-email-server/commits/main)
+[![License](https://img.shields.io/github/license/smcmanigal/mcp-email-server)](LICENSE)
 
 IMAP and SMTP email client — available as both an MCP Server and a standalone CLI tool.
 
@@ -11,11 +10,12 @@ IMAP and SMTP email client — available as both an MCP Server and a standalone 
 > maintained at <https://github.com/smcmanigal/mcp-email-server>. It adds OAuth2 (Microsoft 365 and
 > Google), filter rules, a CLI, large-mail handling and many IMAP fixes, and it no longer merges
 > upstream: useful upstream fixes are ported by hand and every upstream PR's decision is recorded in
-> [docs/upstream-review.md](docs/upstream-review.md). The badges and the PyPI (`uvx`/`pip`)
-> instructions below still refer to the upstream package, which does not include these changes. To use this fork, install it from git (see [CLI Usage](#cli-usage)):
+> [docs/upstream-review.md](docs/upstream-review.md). The PyPI (`uvx`/`pip`) instructions below
+> still refer to the upstream package, which does not include these changes. To use this fork, install
+> it from git (see [CLI Usage](#cli-usage)):
 > `uv tool install git+https://github.com/smcmanigal/mcp-email-server.git`
 
-- **Github repository**: <https://github.com/ai-zerolab/mcp-email-server/>
+- **Github repository**: <https://github.com/smcmanigal/mcp-email-server/>
 
 ## Installation
 
@@ -424,7 +424,7 @@ The `in_reply_to` parameter sets the `In-Reply-To` header, and `references` sets
 
 ## Development
 
-This project is managed using [uv](https://github.com/ai-zerolab/uv).
+This project is managed using [uv](https://github.com/astral-sh/uv).
 
 Try `make install` to install the virtual environment and install the pre-commit hooks.
 
