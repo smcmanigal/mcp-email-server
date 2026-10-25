@@ -40,9 +40,8 @@ dependencies = [
 mcp-email-server = "mcp_email_server.cli:app"
 
 [project.urls]
-Homepage = "https://ai-zerolab.github.io/mcp-email-server/"
+Homepage = "https://github.com/smcmanigal/mcp-email-server"
 Repository = "https://github.com/ai-zerolab/mcp-email-server"
-Documentation = "https://ai-zerolab.github.io/mcp-email-server/"
 
 [dependency-groups]
 dev = [
@@ -52,9 +51,6 @@ dev = [
     "deptry>=0.22.0",
     "pytest-cov>=4.0.0",
     "ruff>=0.9.2",
-    "mkdocs>=1.4.2",
-    "mkdocs-material>=8.5.10",
-    "mkdocstrings[python]>=0.26.1",
 ]
 
 [build-system]

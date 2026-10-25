@@ -97,16 +97,3 @@ jobs:
           tags: |
             ghcr.io/ai-zerolab/mcp-email-server:${{ steps.vars.outputs.tag }}
             ghcr.io/ai-zerolab/mcp-email-server:latest
-
-  deploy-docs:
-    needs: publish
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out
-        uses: actions/checkout@v4
-
-      - name: Set up the environment
-        uses: ./.github/actions/setup-python-env
-
-      - name: Deploy documentation
-        run: uv run mkdocs gh-deploy --force

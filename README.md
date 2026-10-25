@@ -19,7 +19,6 @@ IMAP and SMTP email client — available as both an MCP Server and a standalone 
 > `uv tool install git+https://github.com/smcmanigal/mcp-email-server.git`
 
 - **Github repository**: <https://github.com/ai-zerolab/mcp-email-server/>
-- **Documentation** <https://ai-zerolab.github.io/mcp-email-server/>
 
 ## Installation
 
