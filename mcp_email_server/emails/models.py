@@ -57,6 +57,8 @@ class EmailContentBatchResponse(BaseModel):
     requested_count: int
     retrieved_count: int
     failed_ids: list[str]
+    # Reason for each ID in failed_ids, e.g. not found, unparseable, or the mailbox could not be selected
+    errors: dict[str, str] = {}
 
 
 class AttachmentDownloadResponse(BaseModel):

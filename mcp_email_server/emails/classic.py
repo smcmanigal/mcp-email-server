@@ -549,6 +549,10 @@ async def _refresh_imap_capabilities(imap) -> None:
         logger.warning(f"IMAP CAPABILITY refresh after login failed, using pre-auth capabilities: {e!s}")
 
 
+class MailboxSelectError(ValueError):
+    """The server refused to SELECT a mailbox (missing, misspelled or not selectable)."""
+
+
 async def _select_or_raise(imap, mailbox: str):
     """SELECT mailbox and raise a readable error if the server refuses it.
 
@@ -563,7 +567,9 @@ async def _select_or_raise(imap, mailbox: str):
             line.decode("utf-8", errors="replace") if isinstance(line, bytes) else str(line)
             for line in (getattr(response, "lines", None) or [])
         ).strip()
-        raise ValueError(f"Mailbox {mailbox!r} could not be selected: {result}" + (f" ({detail})" if detail else ""))
+        raise MailboxSelectError(
+            f"Mailbox {mailbox!r} could not be selected: {result}" + (f" ({detail})" if detail else "")
+        )
     return response
 
 
@@ -1272,12 +1278,12 @@ class EmailClient:
                 logger.error(f"Could not find email data in response for email ID: {email_id}")
                 return None
 
-            # Parse the email
+            # Parse the email; a parse failure raises so the caller can report it
             try:
                 return self._parse_email_data(raw_email, email_id, truncate_body, links, body_offset)
             except Exception as e:
                 logger.error(f"Error parsing email: {type(e).__name__}: {e!r}")
-                return None
+                raise ValueError(f"Could not parse email: {type(e).__name__}: {e}") from e
 
         finally:
             # Ensure we logout properly
@@ -2214,8 +2220,9 @@ class ClassicEmailHandler(EmailHandler):
         """Batch retrieve email body content"""
         emails = []
         failed_ids = []
+        errors: dict[str, str] = {}
 
-        for email_id in email_ids:
+        for index, email_id in enumerate(email_ids):
             try:
                 email_data = await self.incoming_client.get_email_body_by_id(
                     email_id, mailbox, truncate_body, links, body_offset
@@ -2237,15 +2244,27 @@ class ClassicEmailHandler(EmailHandler):
                     )
                 else:
                     failed_ids.append(email_id)
+                    errors[email_id] = (
+                        f"Not found in {mailbox!r}: no message with this ID, or the server returned no content"
+                    )
+            except MailboxSelectError as e:
+                # The mailbox is the problem, not the message: fail the rest without logging in again per ID
+                logger.error(f"Failed to retrieve emails from {mailbox!r}: {e}")
+                for remaining_id in email_ids[index:]:
+                    failed_ids.append(remaining_id)
+                    errors[remaining_id] = str(e)
+                break
             except Exception as e:
                 logger.error(f"Failed to retrieve email {email_id}: {type(e).__name__}: {e!r}")
                 failed_ids.append(email_id)
+                errors[email_id] = f"{type(e).__name__}: {e}"
 
         return EmailContentBatchResponse(
             emails=emails,
             requested_count=len(email_ids),
             retrieved_count=len(emails),
             failed_ids=failed_ids,
+            errors=errors,
         )
 
     async def send_email(

@@ -91,8 +91,8 @@ def read_emails(
         else:
             for email in result.emails:
                 print_email_content(email.model_dump())
-            if result.failed_ids:
-                print_error(f"Failed to retrieve: {', '.join(result.failed_ids)}")
+            for failed_id in result.failed_ids:
+                print_error(f"Failed to retrieve {failed_id}: {result.errors.get(failed_id, 'unknown error')}")
     except Exception as e:
         print_error(e)
         raise typer.Exit(1) from None
