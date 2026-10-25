@@ -206,6 +206,16 @@ async def send_email(
             ),
         ),
     ] = None,
+    reply_to_address: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "Address that replies should go to (sets the Reply-To header), e.g. 'team@example.com' "
+                "or 'Support <support@example.com>'. Separate several with commas. Not related to in_reply_to."
+            ),
+        ),
+    ] = None,
 ) -> str:
     handler = dispatch_handler(account_name)
     message_id = await handler.send_email(
@@ -218,6 +228,7 @@ async def send_email(
         attachments,
         in_reply_to,
         references,
+        reply_to=reply_to_address,
     )
     recipient_str = ", ".join(recipients)
     attachment_info = f" with {len(attachments)} attachment(s)" if attachments else ""

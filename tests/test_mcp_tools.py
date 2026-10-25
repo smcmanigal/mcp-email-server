@@ -395,6 +395,7 @@ class TestMcpTools:
                 None,
                 None,  # in_reply_to
                 None,  # references
+                reply_to=None,
             )
 
     @pytest.mark.asyncio

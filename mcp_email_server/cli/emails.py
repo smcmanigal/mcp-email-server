@@ -111,6 +111,10 @@ def send_email(
         str | None,
         typer.Option("--reply-to", help="Message-ID to reply to, including angle brackets, e.g. '<abc@example.com>'"),
     ] = None,
+    reply_to_address: Annotated[
+        str | None,
+        typer.Option("--reply-to-address", help="Address replies should go to (Reply-To header); comma-separated"),
+    ] = None,
 ) -> None:
     """Send an email."""
     try:
@@ -131,6 +135,7 @@ def send_email(
                 html=html,
                 attachments=attachment,
                 in_reply_to=reply_to,
+                reply_to=reply_to_address,
             )
         )
         recipient_str = ", ".join(to)

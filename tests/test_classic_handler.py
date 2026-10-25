@@ -179,6 +179,7 @@ class TestClassicEmailHandler:
                 None,
                 None,
                 None,
+                reply_to=None,
             )
 
     @pytest.mark.asyncio
@@ -212,6 +213,7 @@ class TestClassicEmailHandler:
                 [str(test_file)],
                 None,
                 None,
+                reply_to=None,
             )
 
     @pytest.mark.asyncio
@@ -312,6 +314,51 @@ class TestClassicEmailHandler:
             msg = call_args[0][0]
             assert msg["In-Reply-To"] == "<original@example.com>"
             assert msg["References"] == "<original@example.com>"
+            assert msg["Reply-To"] is None
+
+    @pytest.mark.asyncio
+    async def test_send_email_with_reply_to_address(self, classic_handler):
+        """reply_to sets the Reply-To header, RFC 2047-encoding a non-ASCII display name."""
+        mock_smtp = AsyncMock()
+        mock_smtp.__aenter__.return_value = mock_smtp
+        mock_smtp.__aexit__.return_value = None
+        mock_smtp.login = AsyncMock()
+        mock_smtp.send_message = AsyncMock()
+
+        with (
+            patch("aiosmtplib.SMTP", return_value=mock_smtp),
+            patch.object(classic_handler.outgoing_client, "append_to_sent", AsyncMock(return_value=True)),
+        ):
+            await classic_handler.send_email(
+                recipients=["recipient@example.com"],
+                subject="Test",
+                body="Body",
+                reply_to="Support <support@example.com>, Zoë <zoe@example.com>",
+            )
+
+        msg = mock_smtp.send_message.call_args[0][0]
+        assert msg["Reply-To"] == "Support <support@example.com>, =?utf-8?q?Zo=C3=AB?= <zoe@example.com>"
+        assert msg["In-Reply-To"] is None
+
+    @pytest.mark.parametrize(
+        "reply_to",
+        ["not-an-address", "a@example.com\r\nBcc: victim@example.com", "a@example.com, nobody"],
+    )
+    @pytest.mark.asyncio
+    async def test_send_email_rejects_invalid_reply_to(self, classic_handler, reply_to):
+        """An invalid Reply-To value raises before anything is sent."""
+        mock_smtp = AsyncMock()
+        mock_smtp.__aenter__.return_value = mock_smtp
+
+        with patch("aiosmtplib.SMTP", return_value=mock_smtp), pytest.raises(ValueError, match="Reply-To"):
+            await classic_handler.send_email(
+                recipients=["recipient@example.com"],
+                subject="Test",
+                body="Body",
+                reply_to=reply_to,
+            )
+
+        mock_smtp.send_message.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_get_emails_content_includes_message_id(self, classic_handler):

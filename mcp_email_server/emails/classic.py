@@ -635,6 +635,20 @@ async def _smtp_authenticate(
         await smtp.login(email_server.user_name, email_server.password.get_secret_value())
 
 
+def _format_reply_to(value: str) -> str:
+    """Validate a Reply-To value (one or more comma-separated addresses) and return the header text.
+
+    Each address is re-encoded with formataddr, so a non-ASCII display name is RFC 2047-encoded
+    and a line break cannot inject extra headers.
+    """
+    if any(ch in value for ch in "\r\n\0"):
+        raise ValueError(f"Reply-To must not contain line breaks or NUL characters: {value!r}")
+    addresses = email.utils.getaddresses([value])
+    if not addresses or any("@" not in addr for _, addr in addresses):
+        raise ValueError(f"Invalid Reply-To address: {value!r}")
+    return ", ".join(email.utils.formataddr((name, addr), charset="utf-8") for name, addr in addresses)
+
+
 class EmailClient:
     def __init__(
         self,
@@ -1422,6 +1436,19 @@ class EmailClient:
 
         return msg
 
+    def _set_from_header(self, msg) -> str:
+        """Set the From header on msg and return the SMTP envelope sender address."""
+        # Build From from name and address separately: formataddr quotes names with
+        # specials like commas and RFC 2047-encodes only a non-ASCII name, never the address.
+        if self.sender_name is not None:
+            msg["From"] = email.utils.formataddr((self.sender_name, self.sender), charset="utf-8")
+            return self.sender
+        if any(ord(c) > 127 for c in self.sender):
+            msg["From"] = Header(self.sender, "utf-8")
+        else:
+            msg["From"] = self.sender
+        return email.utils.parseaddr(self.sender)[1] or self.sender
+
     async def send_email(
         self,
         recipients: list[str],
@@ -1433,6 +1460,7 @@ class EmailClient:
         attachments: list[str] | None = None,
         in_reply_to: str | None = None,
         references: str | None = None,
+        reply_to: str | None = None,
     ):
         # Create message with or without attachments
         if attachments:
@@ -1447,23 +1475,16 @@ class EmailClient:
         else:
             msg["Subject"] = subject
 
-        # Build From from name and address separately: formataddr quotes names with
-        # specials like commas and RFC 2047-encodes only a non-ASCII name, never the address.
-        if self.sender_name is not None:
-            envelope_sender = self.sender
-            msg["From"] = email.utils.formataddr((self.sender_name, self.sender), charset="utf-8")
-        else:
-            envelope_sender = email.utils.parseaddr(self.sender)[1] or self.sender
-            if any(ord(c) > 127 for c in self.sender):
-                msg["From"] = Header(self.sender, "utf-8")
-            else:
-                msg["From"] = self.sender
-
+        envelope_sender = self._set_from_header(msg)
         msg["To"] = ", ".join(recipients)
 
         # Add CC header if provided (visible to recipients)
         if cc:
             msg["Cc"] = ", ".join(cc)
+
+        # Validated here, before the SMTP connection is opened
+        if reply_to:
+            msg["Reply-To"] = _format_reply_to(reply_to)
 
         # Set threading headers for replies
         if in_reply_to:
@@ -2214,9 +2235,10 @@ class ClassicEmailHandler(EmailHandler):
         attachments: list[str] | None = None,
         in_reply_to: str | None = None,
         references: str | None = None,
+        reply_to: str | None = None,
     ) -> str | None:
         msg = await self.outgoing_client.send_email(
-            recipients, subject, body, cc, bcc, html, attachments, in_reply_to, references
+            recipients, subject, body, cc, bcc, html, attachments, in_reply_to, references, reply_to=reply_to
         )
 
         # Save to Sent folder if enabled
