@@ -395,7 +395,7 @@ class TestClassicEmailHandler:
             assert result.emails[0].body == "Test email body"
 
             # Verify the client method was called correctly
-            mock_get_body.assert_called_once_with("123", "INBOX", None, "footnotes")
+            mock_get_body.assert_called_once_with("123", "INBOX", None, "footnotes", 0)
 
 
 class TestEmailClientBatchMethods:

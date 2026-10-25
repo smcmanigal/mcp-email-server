@@ -58,3 +58,29 @@ class TestTruncateBody:
         raw = _make_raw_email(body_text)
         result = email_client._parse_email_data(raw, "1", truncate_body=50)
         assert result["body"] == "x" * 50 + "...[TRUNCATED]"
+
+
+class TestBodyOffset:
+    BODY = "".join(chr(ord("a") + i % 26) for i in range(250))
+
+    def test_pages_cover_body_exactly(self, email_client):
+        """Paging by offset += truncate_body reassembles the whole body; only the last page lacks the marker."""
+        raw = _make_raw_email(self.BODY)
+        pages = [
+            email_client._parse_email_data(raw, "1", truncate_body=100, body_offset=o)["body"] for o in (0, 100, 200)
+        ]
+        assert [p.endswith("...[TRUNCATED]") for p in pages] == [True, True, False]
+        assert "".join(p.removesuffix("...[TRUNCATED]") for p in pages) == self.BODY
+
+    def test_offset_with_default_limit(self, email_client):
+        """A short body read from an offset returns the rest without a marker."""
+        result = email_client._parse_email_data(_make_raw_email(self.BODY), "1", body_offset=240)
+        assert result["body"] == self.BODY[240:]
+
+    def test_offset_past_end_returns_empty(self, email_client):
+        result = email_client._parse_email_data(_make_raw_email(self.BODY), "1", body_offset=1000)
+        assert result["body"] == ""
+
+    def test_page_ending_at_body_end_has_no_marker(self, email_client):
+        result = email_client._parse_email_data(_make_raw_email(self.BODY), "1", truncate_body=50, body_offset=200)
+        assert result["body"] == self.BODY[200:]

@@ -50,7 +50,12 @@ class EmailHandler(abc.ABC):
 
     @abc.abstractmethod
     async def get_emails_content(
-        self, email_ids: list[str], mailbox: str = "INBOX", truncate_body: int | None = None, links: str = "footnotes"
+        self,
+        email_ids: list[str],
+        mailbox: str = "INBOX",
+        truncate_body: int | None = None,
+        links: str = "footnotes",
+        body_offset: int = 0,
     ) -> "EmailContentBatchResponse":
         """
         Get full content (including body) of multiple emails by their email IDs (IMAP UIDs)
@@ -61,6 +66,8 @@ class EmailHandler(abc.ABC):
             truncate_body: Maximum number of characters for email body content.
                 If specified, body content longer than this will be truncated.
                 If None, uses the default MAX_BODY_LENGTH (20000).
+            links: How link URLs appear in the body (footnotes, inline or none).
+            body_offset: Character position in the body to start from, for paging through long bodies.
         """
 
     @abc.abstractmethod

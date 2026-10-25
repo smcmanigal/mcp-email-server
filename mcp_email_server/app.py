@@ -135,6 +135,7 @@ async def get_emails_content(
         int | None,
         Field(
             default=None,
+            ge=1,
             description="Maximum number of characters for email body content. If specified, body content longer than this will be truncated. If not specified, defaults to 20000 characters.",
         ),
     ] = None,
@@ -150,9 +151,21 @@ async def get_emails_content(
             ),
         ),
     ] = "footnotes",
+    body_offset: Annotated[
+        int,
+        Field(
+            default=0,
+            ge=0,
+            description=(
+                "Character position in the body to start from. A body cut short ends with '...[TRUNCATED]'; "
+                "to read the next part, call again with body_offset increased by the truncate_body value used "
+                "(20000 by default)."
+            ),
+        ),
+    ] = 0,
 ) -> EmailContentBatchResponse:
     handler = dispatch_handler(account_name)
-    return await handler.get_emails_content(email_ids, mailbox, truncate_body, links)
+    return await handler.get_emails_content(email_ids, mailbox, truncate_body, links, body_offset)
 
 
 @mcp.tool(

@@ -72,7 +72,8 @@ def read_emails(
     email_ids: Annotated[list[str], typer.Argument(help="Email IDs to read")],
     account: Annotated[str, typer.Option("--account", "-a", help="Email account name")],
     mailbox: Annotated[str, typer.Option(help="Mailbox to search")] = "INBOX",
-    truncate: Annotated[int | None, typer.Option(help="Max body characters")] = None,
+    truncate: Annotated[int | None, typer.Option(min=1, help="Max body characters")] = None,
+    offset: Annotated[int, typer.Option(min=0, help="Body character to start from (for paging long bodies)")] = 0,
     links: Annotated[
         str,
         typer.Option(help="Link URLs: footnotes (listed at the end), inline (in place), or none"),
@@ -84,7 +85,7 @@ def read_emails(
         if links not in LINK_MODES:
             raise ValueError(f"--links must be one of {', '.join(LINK_MODES)}")
         handler = dispatch_handler(account)
-        result = asyncio.run(handler.get_emails_content(email_ids, mailbox, truncate, links))
+        result = asyncio.run(handler.get_emails_content(email_ids, mailbox, truncate, links, offset))
         if json_output:
             print_json(result)
         else:

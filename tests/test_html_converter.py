@@ -283,7 +283,7 @@ class TestLinksParameterPlumbing:
         handler.get_emails_content = AsyncMock(return_value=MagicMock())
         with patch("mcp_email_server.app.dispatch_handler", return_value=handler):
             await app_module.get_emails_content("acct", ["1"], "INBOX", None, "none")
-        handler.get_emails_content.assert_awaited_once_with(["1"], "INBOX", None, "none")
+        handler.get_emails_content.assert_awaited_once_with(["1"], "INBOX", None, "none", 0)
 
     def test_cli_links_option_and_validation(self):
         from unittest.mock import AsyncMock, MagicMock, patch
@@ -301,6 +301,6 @@ class TestLinksParameterPlumbing:
             ok = CliRunner().invoke(app, ["emails", "read", "-a", "acct", "--links", "inline", "1"])
             bad = CliRunner().invoke(app, ["emails", "read", "-a", "acct", "--links", "all", "1"])
         assert ok.exit_code == 0, ok.output
-        handler.get_emails_content.assert_awaited_once_with(["1"], "INBOX", None, "inline")
+        handler.get_emails_content.assert_awaited_once_with(["1"], "INBOX", None, "inline", 0)
         assert bad.exit_code == 1
         assert "--links must be one of" in bad.output

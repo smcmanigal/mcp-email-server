@@ -733,7 +733,12 @@ class EmailClient:
             return datetime.now(timezone.utc)
 
     def _parse_email_data(  # noqa: C901
-        self, raw_email: bytes, email_id: str | None = None, truncate_body: int | None = None, links: str = "footnotes"
+        self,
+        raw_email: bytes,
+        email_id: str | None = None,
+        truncate_body: int | None = None,
+        links: str = "footnotes",
+        body_offset: int = 0,
     ) -> dict[str, Any]:
         """Parse raw email data into a structured dictionary."""
         parser = BytesParser(policy=default)
@@ -797,9 +802,13 @@ class EmailClient:
                 text = _decode_text_part(payload, charset)
 
                 body = html_to_text(text, links) if content_type == "text/html" else relocate_long_urls(text, links)
+        # body_offset lets a caller page through a long body: request offset + limit next
         limit = truncate_body if truncate_body is not None else MAX_BODY_LENGTH
-        if body and len(body) > limit:
-            body = body[:limit] + "...[TRUNCATED]"
+        if body and (body_offset or len(body) > limit):
+            truncated = len(body) > body_offset + limit
+            body = body[body_offset : body_offset + limit]
+            if truncated:
+                body += "...[TRUNCATED]"
         return {
             "email_id": email_id or "",
             "message_id": message_id,
@@ -1224,7 +1233,12 @@ class EmailClient:
         return None
 
     async def get_email_body_by_id(
-        self, email_id: str, mailbox: str = "INBOX", truncate_body: int | None = None, links: str = "footnotes"
+        self,
+        email_id: str,
+        mailbox: str = "INBOX",
+        truncate_body: int | None = None,
+        links: str = "footnotes",
+        body_offset: int = 0,
     ) -> dict[str, Any] | None:
         imap = self._imap_connect()
         try:
@@ -1260,7 +1274,7 @@ class EmailClient:
 
             # Parse the email
             try:
-                return self._parse_email_data(raw_email, email_id, truncate_body, links)
+                return self._parse_email_data(raw_email, email_id, truncate_body, links, body_offset)
             except Exception as e:
                 logger.error(f"Error parsing email: {type(e).__name__}: {e!r}")
                 return None
@@ -2187,7 +2201,12 @@ class ClassicEmailHandler(EmailHandler):
         )
 
     async def get_emails_content(
-        self, email_ids: list[str], mailbox: str = "INBOX", truncate_body: int | None = None, links: str = "footnotes"
+        self,
+        email_ids: list[str],
+        mailbox: str = "INBOX",
+        truncate_body: int | None = None,
+        links: str = "footnotes",
+        body_offset: int = 0,
     ) -> EmailContentBatchResponse:
         """Batch retrieve email body content"""
         emails = []
@@ -2195,7 +2214,9 @@ class ClassicEmailHandler(EmailHandler):
 
         for email_id in email_ids:
             try:
-                email_data = await self.incoming_client.get_email_body_by_id(email_id, mailbox, truncate_body, links)
+                email_data = await self.incoming_client.get_email_body_by_id(
+                    email_id, mailbox, truncate_body, links, body_offset
+                )
                 if email_data:
                     emails.append(
                         EmailBodyResponse(
