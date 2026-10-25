@@ -2,10 +2,8 @@
 
 [![Release](https://img.shields.io/github/v/release/ai-zerolab/mcp-email-server)](https://img.shields.io/github/v/release/ai-zerolab/mcp-email-server)
 [![Build status](https://img.shields.io/github/actions/workflow/status/ai-zerolab/mcp-email-server/main.yml?branch=main)](https://github.com/ai-zerolab/mcp-email-server/actions/workflows/main.yml?query=branch%3Amain)
-[![codecov](https://codecov.io/gh/ai-zerolab/mcp-email-server/branch/main/graph/badge.svg)](https://codecov.io/gh/ai-zerolab/mcp-email-server)
 [![Commit activity](https://img.shields.io/github/commit-activity/m/ai-zerolab/mcp-email-server)](https://img.shields.io/github/commit-activity/m/ai-zerolab/mcp-email-server)
 [![License](https://img.shields.io/github/license/ai-zerolab/mcp-email-server)](https://img.shields.io/github/license/ai-zerolab/mcp-email-server)
-[![smithery badge](https://smithery.ai/badge/@ai-zerolab/mcp-email-server)](https://smithery.ai/server/@ai-zerolab/mcp-email-server)
 
 IMAP and SMTP email client — available as both an MCP Server and a standalone CLI tool.
 
@@ -13,9 +11,8 @@ IMAP and SMTP email client — available as both an MCP Server and a standalone 
 > maintained at <https://github.com/smcmanigal/mcp-email-server>. It adds OAuth2 (Microsoft 365 and
 > Google), filter rules, a CLI, large-mail handling and many IMAP fixes, and it no longer merges
 > upstream: useful upstream fixes are ported by hand and every upstream PR's decision is recorded in
-> [docs/upstream-review.md](docs/upstream-review.md). The badges, PyPI (`uvx`/`pip`), Docker and
-> Smithery instructions below still refer to the upstream package, which does not include these
-> changes. To use this fork, install it from git (see [CLI Usage](#cli-usage)):
+> [docs/upstream-review.md](docs/upstream-review.md). The badges and the PyPI (`uvx`/`pip`)
+> instructions below still refer to the upstream package, which does not include these changes. To use this fork, install it from git (see [CLI Usage](#cli-usage)):
 > `uv tool install git+https://github.com/smcmanigal/mcp-email-server.git`
 
 - **Github repository**: <https://github.com/ai-zerolab/mcp-email-server/>
@@ -210,27 +207,6 @@ Then you can try it in [Claude Desktop](https://claude.ai/download). If you want
     }
   }
 }
-```
-
-If `docker` is avaliable, you can try use docker image, but you may need to config it in your client using `tools` via `MCP`. The default config path is `~/.config/zerolib/mcp_email_server/config.toml`
-
-```json
-{
-  "mcpServers": {
-    "zerolib-email": {
-      "command": "docker",
-      "args": ["run", "-it", "ghcr.io/ai-zerolab/mcp-email-server:latest"]
-    }
-  }
-}
-```
-
-### Installing via Smithery
-
-To install Email Server for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@ai-zerolab/mcp-email-server):
-
-```bash
-npx -y @smithery/cli install @ai-zerolab/mcp-email-server --client claude
 ```
 
 ## CLI Usage
@@ -453,12 +429,3 @@ This project is managed using [uv](https://github.com/ai-zerolab/uv).
 Try `make install` to install the virtual environment and install the pre-commit hooks.
 
 Use `uv run mcp-email-server` for local development.
-
-## Releasing a new version
-
-- Create an API Token on [PyPI](https://pypi.org/).
-- Add the API Token to your projects secrets with the name `PYPI_TOKEN` by visiting [this page](https://github.com/ai-zerolab/mcp-email-server/settings/secrets/actions/new).
-- Create a [new release](https://github.com/ai-zerolab/mcp-email-server/releases/new) on Github.
-- Create a new tag in the form `*.*.*`.
-
-For more details, see [here](https://fpgmaas.github.io/cookiecutter-uv/features/cicd/#how-to-trigger-a-release).
