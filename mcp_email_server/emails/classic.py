@@ -1625,7 +1625,12 @@ class EmailClient:
         """Create a folder if it doesn't exist, using an existing IMAP connection."""
         try:
             _, existing = await imap.list('""', _quote_mailbox(folder_name))
-            if existing and any(isinstance(item, bytes) and b")" in item for item in existing):
+            # A \Noselect or \NonExistent entry is only a hierarchy placeholder (e.g. "Projects"
+            # when only "Projects/2026" exists); it cannot hold mail, so CREATE it instead.
+            if any(
+                not any(flag.lower() in ("\\noselect", "\\nonexistent") for flag in flags)
+                for flags, _delimiter, _name in _iter_list_entries(existing or [])
+            ):
                 return True
 
             result = await imap.create(_quote_mailbox(folder_name))

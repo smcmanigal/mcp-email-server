@@ -115,3 +115,43 @@ class TestModifiedUtf7:
 
         imap.list = AsyncMock(return_value=("OK", [b'(\\Sent) "/" "Entw&APw-rfe"']))
         assert await EmailClient(server)._find_sent_folder_by_flag(imap) == "Entwürfe"
+
+
+class TestCreateFolderIfNeeded:
+    """A \\Noselect hierarchy placeholder is not an existing folder (port of upstream #266 part)."""
+
+    @staticmethod
+    def _client():
+        from mcp_email_server.config import EmailServer
+        from mcp_email_server.emails.classic import EmailClient
+
+        return EmailClient(EmailServer(user_name="u", password="p", host="h", port=993))
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("flags", ["\\Noselect \\HasChildren", "\\NonExistent"])
+    async def test_placeholder_is_created(self, flags):
+        from unittest.mock import MagicMock
+
+        imap = AsyncMock()
+        imap.list = AsyncMock(return_value=("OK", [f'({flags}) "/" "Projects"'.encode(), b"done"]))
+        imap.create = AsyncMock(return_value=MagicMock(result="OK", lines=[]))
+        assert await self._client().create_folder_if_needed(imap, "Projects") is True
+        imap.create.assert_awaited_once_with('"Projects"')
+
+    @pytest.mark.asyncio
+    async def test_selectable_folder_is_not_created(self):
+        imap = AsyncMock()
+        imap.list = AsyncMock(return_value=("OK", [b'(\\HasNoChildren) "/" "Projects"', b"done"]))
+        assert await self._client().create_folder_if_needed(imap, "Projects") is True
+        imap.create.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_missing_folder_is_created_with_encoded_name(self):
+        from unittest.mock import MagicMock
+
+        imap = AsyncMock()
+        imap.list = AsyncMock(return_value=("OK", [b"LIST completed"]))
+        imap.create = AsyncMock(return_value=MagicMock(result="OK", lines=[]))
+        assert await self._client().create_folder_if_needed(imap, "Entwürfe") is True
+        imap.list.assert_awaited_once_with('""', '"Entw&APw-rfe"')
+        imap.create.assert_awaited_once_with('"Entw&APw-rfe"')
