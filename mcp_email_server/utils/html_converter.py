@@ -4,7 +4,9 @@ Converts complex HTML marketing emails to clean markdown format
 """
 
 import re
+import unicodedata
 from html import unescape
+from html.parser import HTMLParser
 from urllib.parse import unquote
 
 
@@ -102,3 +104,76 @@ def html_to_markdown(html_content: str) -> str:
     html_content = html_content.replace("\u2013", "-")  # En dash to hyphen
 
     return html_content.strip()
+
+
+_TEXT_SKIP_TAGS = {"head", "title", "script", "style", "noscript", "template"}
+_TEXT_BLOCK_TAGS = {
+    "address", "article", "aside", "blockquote", "br", "center", "dd", "div", "dl", "dt", "footer",
+    "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li", "main", "nav", "ol", "p", "pre",
+    "section", "table", "tbody", "tfoot", "thead", "tr", "ul",
+}  # fmt: skip
+_TEXT_CELL_TAGS = {"td", "th"}
+
+
+class _HtmlTextExtractor(HTMLParser):
+    """Collect the readable text of an HTML document, with line breaks at block boundaries."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.skip_depth = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "body":
+            # A <head> that was never closed must not hide the body.
+            self.skip_depth = 0
+        elif tag in _TEXT_SKIP_TAGS:
+            self.skip_depth += 1
+        elif tag in _TEXT_BLOCK_TAGS:
+            self.parts.append("\n")
+        elif tag in _TEXT_CELL_TAGS:
+            self.parts.append(" ")
+
+    def handle_startendtag(self, tag, attrs):
+        if tag in _TEXT_BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag):
+        if tag in _TEXT_SKIP_TAGS:
+            self.skip_depth = max(self.skip_depth - 1, 0)
+        elif tag in _TEXT_BLOCK_TAGS:
+            self.parts.append("\n")
+        elif tag in _TEXT_CELL_TAGS:
+            self.parts.append(" ")
+
+    def handle_data(self, data):
+        if not self.skip_depth:
+            self.parts.append(data)
+
+
+_ALSO_INVISIBLE = {"\u034f"}  # COMBINING GRAPHEME JOINER is Mn, not Cf, but renders as nothing
+
+
+def _is_invisible(ch: str) -> bool:
+    return unicodedata.category(ch) == "Cf" and ch != "\u200d"
+
+
+def html_to_text(html_content: str) -> str:
+    """Convert an HTML email body to plain text for reading (used when there is no text/plain part).
+
+    Built on the standard library parser: head/title/script/style are dropped, every
+    entity is decoded, block elements and table rows become line breaks, table cells are
+    separated, and runs of whitespace are collapsed.
+    """
+    if not html_content or not html_content.strip():
+        return ""
+    extractor = _HtmlTextExtractor()
+    extractor.feed(html_content)
+    extractor.close()
+    text = "".join(extractor.parts).replace("\xa0", " ")
+    # Marketing mail pads its preview text with hundreds of invisible characters (soft
+    # hyphens, zero-width spaces, combining grapheme joiners); drop them, but keep the
+    # zero-width joiner that emoji sequences need.
+    text = "".join(ch for ch in text if ch not in _ALSO_INVISIBLE and not _is_invisible(ch))
+    lines = [re.sub(r"[ \t\r\f\v]+", " ", line).strip() for line in text.split("\n")]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()

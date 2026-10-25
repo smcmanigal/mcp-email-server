@@ -80,3 +80,60 @@ def test_cleans_special_characters():
     result = html_to_markdown(html)
     assert "\u00a0" not in result
     assert "\u200b" not in result
+
+
+class TestHtmlToText:
+    """Plain-text fallback for HTML-only mail (adapted from upstream #169)."""
+
+    def test_title_and_styles_do_not_leak(self):
+        from mcp_email_server.utils.html_converter import html_to_text
+
+        html = "<html><head><title>Newsletter</title><style>p{color:red}</style></head><body><p>Hi</p></body></html>"
+        assert html_to_text(html) == "Hi"
+
+    def test_entities_decoded(self):
+        from mcp_email_server.utils.html_converter import html_to_text
+
+        assert (
+            html_to_text("<p>Don&#8217;t &copy; 2026 &AMP; caf&eacute;&nbsp;now</p>") == "Don\u2019t © 2026 & café now"
+        )
+
+    def test_blocks_and_cells_are_separated(self):
+        from mcp_email_server.utils.html_converter import html_to_text
+
+        html = "<p>One</p><p>Two</p><table><tr><td>A</td><td>B</td></tr><tr><td>C</td></tr></table>Line<br>Break"
+        assert html_to_text(html) == "One\n\nTwo\n\nA B\n\nC\n\nLine\nBreak"
+
+    def test_unclosed_head_does_not_hide_body(self):
+        from mcp_email_server.utils.html_converter import html_to_text
+
+        assert html_to_text("<html><head><title>x<body><p>Visible</p>") == "Visible"
+
+    def test_empty(self):
+        from mcp_email_server.utils.html_converter import html_to_text
+
+        assert html_to_text("") == ""
+        assert html_to_text("   ") == ""
+
+
+def test_parse_email_data_uses_html_fallback():
+    from email.message import EmailMessage
+    from unittest.mock import MagicMock
+
+    from mcp_email_server.emails.classic import EmailClient
+
+    msg = EmailMessage()
+    msg["Subject"] = "HTML only"
+    msg["From"] = "a@example.com"
+    msg.set_content("<html><head><title>T</title></head><body><p>Hello &amp; welcome</p></body></html>", subtype="html")
+    assert EmailClient(MagicMock())._parse_email_data(msg.as_bytes())["body"] == "Hello & welcome"
+
+
+def test_invisible_preheader_padding_is_removed_but_emoji_joiners_kept():
+    from mcp_email_server.utils.html_converter import html_to_text
+
+    padding = "͏ ­ ​ ﻿ " * 50
+    family = "\U0001f468‍\U0001f469‍\U0001f467"
+    assert (
+        html_to_text(f"<p>Sale ends tonight. {padding}</p><p>Hi {family}</p>") == f"Sale ends tonight.\n\nHi {family}"
+    )
