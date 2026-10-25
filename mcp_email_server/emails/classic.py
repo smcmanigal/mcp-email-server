@@ -53,6 +53,85 @@ def _imap_search_date(value: datetime) -> str:
     return f"{value.day:02d}-{_IMAP_MONTHS[value.month - 1]}-{value.year:04d}"
 
 
+_LIST_LITERAL_SUFFIX = re.compile(rb"\{(\d+)\}\s*$")
+
+
+def _read_list_string(text: str, pos: int) -> tuple[str | None, int]:
+    """Read one astring/nstring from a LIST line at pos: "quoted", NIL or an atom.
+
+    Returns (value, position after it); value is None for NIL.
+    """
+    while pos < len(text) and text[pos] == " ":
+        pos += 1
+    if pos < len(text) and text[pos] == '"':
+        value = []
+        pos += 1
+        while pos < len(text) and text[pos] != '"':
+            if text[pos] == "\\" and pos + 1 < len(text):
+                pos += 1
+            value.append(text[pos])
+            pos += 1
+        return "".join(value), pos + 1
+    end = pos
+    while end < len(text) and text[end] != " ":
+        end += 1
+    token = text[pos:end]
+    return (None if token.upper() == "NIL" else token), end
+
+
+def _parse_list_line(line: str) -> tuple[list[str], str | None, str] | None:
+    """Parse one LIST response line '(flags) delimiter name' into (flags, delimiter, name).
+
+    Handles a quoted or NIL delimiter and a quoted (with \\" and \\\\ escapes) or atom
+    name. The name is returned as sent by the server (still modified UTF-7).
+    """
+    line = line.strip()
+    if line.upper().startswith("LIST "):
+        line = line[5:].lstrip()
+    if not line.startswith("("):
+        return None
+    close = line.find(")")
+    if close == -1:
+        return None
+    flags = line[1:close].split()
+    delimiter, pos = _read_list_string(line, close + 1)
+    name, _ = _read_list_string(line, pos)
+    if not name:
+        return None
+    return flags, delimiter, name
+
+
+def _iter_list_entries(lines: list) -> list[tuple[list[str], str | None, str]]:
+    """Parse the lines of a LIST response, joining names the server sent as literals.
+
+    aioimaplib delivers '(flags) "/" {n}' followed by the n-byte name as a separate item.
+    """
+    entries = []
+    items = [
+        item.encode() if isinstance(item, str) else bytes(item) if isinstance(item, bytearray) else item
+        for item in lines
+    ]
+    i = 0
+    while i < len(items):
+        item = items[i]
+        i += 1
+        if not isinstance(item, bytes):
+            continue
+        literal = _LIST_LITERAL_SUFFIX.search(item)
+        if literal and i < len(items) and isinstance(items[i], bytes):
+            name = items[i][: int(literal.group(1))]
+            i += 1
+            head = item[: literal.start()].decode("utf-8", errors="replace")
+            name_text = name.decode("utf-8", errors="replace").replace("\\", "\\\\").replace('"', '\\"')
+            item_text = f'{head}"{name_text}"'
+        else:
+            item_text = item.decode("utf-8", errors="replace")
+        parsed = _parse_list_line(item_text)
+        if parsed:
+            entries.append(parsed)
+    return entries
+
+
 def _reject_unquotable(value: str, what: str) -> None:
     """Raise if value cannot appear in an IMAP quoted string (RFC 3501: no CR, LF or NUL).
 
@@ -1289,19 +1368,12 @@ class EmailClient:
             # List all folders - aioimaplib requires reference_name and mailbox_pattern
             _, folders = await imap.list('""', "*")
 
-            # Search for folder with \Sent flag
-            for folder in folders:
-                folder_str = folder.decode("utf-8") if isinstance(folder, bytes) else str(folder)
-                # IMAP LIST response format: (flags) "delimiter" "name"
-                # Example: (\Sent \HasNoChildren) "/" "Gesendete Objekte"
-                if r"\Sent" in folder_str or "\\Sent" in folder_str:
-                    # Extract folder name from the response
-                    # Split by quotes and get the last quoted part
-                    parts = folder_str.split('"')
-                    if len(parts) >= 3:
-                        folder_name = parts[-2]  # The folder name is the second-to-last quoted part
-                        logger.info(f"Found Sent folder by \\Sent flag: '{folder_name}'")
-                        return folder_name
+            # Search for folder with \Sent flag; names may be quoted or atoms,
+            # e.g. (\Sent \HasNoChildren) "/" "Gesendete Objekte" or (\Sent) "/" Sent
+            for flags, _delimiter, folder_name in _iter_list_entries(folders):
+                if any(flag.lower() == "\\sent" for flag in flags):
+                    logger.info(f"Found Sent folder by \\Sent flag: '{folder_name}'")
+                    return folder_name
         except Exception as e:
             logger.debug(f"Error finding Sent folder by flag: {e}")
 
@@ -2019,21 +2091,13 @@ class ClassicEmailHandler(EmailHandler):
             _, folders = await imap.list('""', pattern)
             folder_info = []
 
-            for folder in folders:
-                if isinstance(folder, bytes):
-                    folder_str = folder.decode("utf-8")
-                    # Parse IMAP LIST response: (\Flags) "delimiter" "folder name"
-                    # Folder name may be quoted ("Sent Items") or unquoted (INBOX)
-                    match = re.match(r'\(([^)]*)\)\s+"([^"]+)"\s+(?:"([^"]+)"|(\S+))', folder_str)
-                    if match:
-                        flags, delimiter = match.group(1), match.group(2)
-                        name = match.group(3) or match.group(4)
-                        folder_info.append({
-                            "name": name,
-                            "delimiter": delimiter,
-                            "flags": flags.split() if flags else [],
-                            "can_select": "\\Noselect" not in flags,
-                        })
+            for flags, delimiter, name in _iter_list_entries(folders):
+                folder_info.append({
+                    "name": name,
+                    "delimiter": delimiter,
+                    "flags": flags,
+                    "can_select": not any(flag.lower() in ("\\noselect", "\\nonexistent") for flag in flags),
+                })
 
             return folder_info
 
