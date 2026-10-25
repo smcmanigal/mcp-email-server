@@ -105,7 +105,20 @@ class TestClassicEmailHandler:
 
             # Verify the client methods were called correctly
             mock_page.assert_awaited_once_with(
-                1, 10, now, None, "Test", "sender@example.com", None, "desc", "INBOX", None, None, None
+                1,
+                10,
+                now,
+                None,
+                "Test",
+                "sender@example.com",
+                None,
+                "desc",
+                "INBOX",
+                None,
+                None,
+                None,
+                body=None,
+                text=None,
             )
 
     @pytest.mark.asyncio
@@ -134,7 +147,9 @@ class TestClassicEmailHandler:
             assert len(result.emails) == 1
 
             # Verify mailbox parameter was passed correctly
-            mock_page.assert_awaited_once_with(1, 10, None, None, None, None, None, "desc", "Sent", None, None, None)
+            mock_page.assert_awaited_once_with(
+                1, 10, None, None, None, None, None, "desc", "Sent", None, None, None, body=None, text=None
+            )
 
     @pytest.mark.asyncio
     async def test_send_email(self, classic_handler):

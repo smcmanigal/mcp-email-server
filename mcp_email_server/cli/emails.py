@@ -31,6 +31,8 @@ def list_emails(
     from_address: Annotated[str | None, typer.Option("--from", help="Filter by sender address")] = None,
     seen: Annotated[bool | None, typer.Option(help="Filter by read status")] = None,
     flagged: Annotated[bool | None, typer.Option(help="Filter by flagged status")] = None,
+    body: Annotated[str | None, typer.Option(help="Filter by text in the body")] = None,
+    text: Annotated[str | None, typer.Option(help="Filter by text in headers or body")] = None,
     json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
 ) -> None:
     """List email metadata (paginated)."""
@@ -47,6 +49,8 @@ def list_emails(
                 mailbox=mailbox,
                 seen=seen,
                 flagged=flagged,
+                body=body,
+                text=text,
             )
         )
         if json_output:

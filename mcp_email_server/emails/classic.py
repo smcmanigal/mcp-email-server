@@ -926,6 +926,8 @@ class EmailClient:
         seen: bool | None = None,
         flagged: bool | None = None,
         answered: bool | None = None,
+        body: str | None = None,
+        text: str | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
         """Search once and return (metadata for the requested page, total matches).
 
@@ -956,6 +958,8 @@ class EmailClient:
                 before,
                 since,
                 subject,
+                body=body,
+                text=text,
                 from_address=from_address,
                 to_address=to_address,
                 seen=seen,
@@ -1024,10 +1028,25 @@ class EmailClient:
         seen: bool | None = None,
         flagged: bool | None = None,
         answered: bool | None = None,
+        body: str | None = None,
+        text: str | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Yield the metadata of one page; see get_emails_metadata_page."""
         emails, _total = await self.get_emails_metadata_page(
-            page, page_size, before, since, subject, from_address, to_address, order, mailbox, seen, flagged, answered
+            page,
+            page_size,
+            before,
+            since,
+            subject,
+            from_address,
+            to_address,
+            order,
+            mailbox,
+            seen,
+            flagged,
+            answered,
+            body=body,
+            text=text,
         )
         for email_data in emails:
             yield email_data
@@ -2026,6 +2045,8 @@ class ClassicEmailHandler(EmailHandler):
         seen: bool | None = None,
         flagged: bool | None = None,
         answered: bool | None = None,
+        body: str | None = None,
+        text: str | None = None,
     ) -> EmailMetadataPageResponse:
         email_data, total = await self.incoming_client.get_emails_metadata_page(
             page,
@@ -2040,6 +2061,8 @@ class ClassicEmailHandler(EmailHandler):
             seen,
             flagged,
             answered,
+            body=body,
+            text=text,
         )
         emails = [EmailMetadata.from_email(data) for data in email_data]
         return EmailMetadataPageResponse(

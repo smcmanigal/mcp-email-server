@@ -87,6 +87,17 @@ async def list_emails_metadata(
         bool | None,
         Field(default=None, description="Filter by replied status: True=replied, False=not replied, None=all."),
     ] = None,
+    body: Annotated[
+        str | None,
+        Field(default=None, description="Filter emails whose body contains this text (IMAP BODY search)."),
+    ] = None,
+    text: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="Filter emails whose headers or body contain this text (IMAP TEXT search).",
+        ),
+    ] = None,
 ) -> EmailMetadataPageResponse:
     handler = dispatch_handler(account_name)
 
@@ -103,6 +114,8 @@ async def list_emails_metadata(
         seen=seen,
         flagged=flagged,
         answered=answered,
+        body=body,
+        text=text,
     )
 
 

@@ -1043,3 +1043,38 @@ class TestFoldedMessageId:
         assert email_client._parse_headers("1", self._RAW)["message_id"] == (
             "<BN6PR1801MB1985@BN6PR1801MB1985.namprd18.prod.outlook.com>"
         )
+
+
+class TestBodyAndTextFilters:
+    """body/text filters reach the UID SEARCH (adapted from upstream #181)."""
+
+    @pytest.mark.asyncio
+    async def test_body_and_text_in_search(self, email_client):
+        mock_imap = AsyncMock()
+        mock_imap._client_task = asyncio.get_running_loop().create_future()
+        mock_imap._client_task.set_result(None)
+        mock_imap.login = AsyncMock(return_value=MagicMock(result="OK", lines=[]))
+        mock_imap.uid_search = AsyncMock(return_value=("OK", [b""]))
+
+        with patch.object(email_client, "imap_class", return_value=mock_imap):
+            await email_client.get_emails_metadata_page(body="invoice 42", text="ACME")
+
+        assert mock_imap.uid_search.call_args.args == ("BODY", '"invoice 42"', "TEXT", '"ACME"')
+
+    def test_cli_passes_body_and_text(self):
+        from typer.testing import CliRunner
+
+        from mcp_email_server.cli import app
+        from mcp_email_server.emails.models import EmailMetadataPageResponse
+
+        handler = MagicMock()
+        handler.get_emails_metadata = AsyncMock(
+            return_value=EmailMetadataPageResponse(
+                page=1, page_size=10, before=None, since=None, subject=None, emails=[], total=0
+            )
+        )
+        with patch("mcp_email_server.cli.emails.dispatch_handler", return_value=handler):
+            result = CliRunner().invoke(app, ["emails", "list", "-a", "acct", "--body", "invoice", "--text", "ACME"])
+        assert result.exit_code == 0, result.output
+        kwargs = handler.get_emails_metadata.call_args.kwargs
+        assert (kwargs["body"], kwargs["text"]) == ("invoice", "ACME")

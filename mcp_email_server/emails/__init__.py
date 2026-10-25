@@ -27,6 +27,8 @@ class EmailHandler(abc.ABC):
         seen: bool | None = None,
         flagged: bool | None = None,
         answered: bool | None = None,
+        body: str | None = None,
+        text: str | None = None,
     ) -> "EmailMetadataPageResponse":
         """
         Get email metadata only (without body content) for better performance.
