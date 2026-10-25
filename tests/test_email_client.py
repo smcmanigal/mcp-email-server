@@ -5,6 +5,7 @@ import email.utils
 import ssl
 from datetime import datetime, timezone
 from email.mime.text import MIMEText
+from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1078,3 +1079,71 @@ class TestBodyAndTextFilters:
         assert result.exit_code == 0, result.output
         kwargs = handler.get_emails_metadata.call_args.kwargs
         assert (kwargs["body"], kwargs["text"]) == ("invoice", "ACME")
+
+
+class TestExactDatetimeFilter:
+    """since/before with a time of day are enforced exactly (adapted from upstream #244)."""
+
+    INTERNALDATES: ClassVar[dict[str, str]] = {
+        "1": "23-Oct-2026 23:59:59 +0000",
+        "2": "24-Oct-2026 14:59:59 +0000",
+        "3": "24-Oct-2026 15:00:00 +0000",
+        "4": "24-Oct-2026 08:30:00 -0700",  # 15:30 UTC
+        "5": "25-Oct-2026 09:00:00 +0000",
+    }
+
+    def _imap(self):
+        mock_imap = AsyncMock()
+        mock_imap._client_task = asyncio.get_running_loop().create_future()
+        mock_imap._client_task.set_result(None)
+        mock_imap.login = AsyncMock(return_value=MagicMock(result="OK", lines=[]))
+        mock_imap.uid_search = AsyncMock(return_value=("OK", [b"1 2 3 4 5"]))
+
+        async def uid(cmd, uid_list, what):
+            assert (cmd, what) == ("fetch", "(INTERNALDATE)")
+            lines = [
+                f'{n} FETCH (UID {u} INTERNALDATE "{self.INTERNALDATES[u]}")'.encode()
+                for n, u in enumerate(uid_list.split(","), 1)
+            ]
+            return ("OK", [*lines, b"FETCH completed"])
+
+        mock_imap.uid = AsyncMock(side_effect=uid)
+        return mock_imap
+
+    @pytest.mark.asyncio
+    async def test_since_with_time_is_exact_and_search_widened(self, email_client):
+        imap = self._imap()
+        with (
+            patch.object(email_client, "imap_class", return_value=imap),
+            patch.object(email_client, "_batch_fetch_headers", return_value={}) as headers,
+        ):
+            _, total = await email_client.get_emails_metadata_page(
+                since=datetime(2026, 10, 24, 15, 0, tzinfo=timezone.utc), page_size=10
+            )
+        assert total == 3  # UIDs 3, 4 (15:30 UTC) and 5
+        assert imap.uid_search.call_args.args == ("SINCE", "23-OCT-2026")
+        headers.assert_awaited_once_with(imap, ["5", "4", "3"])
+
+    @pytest.mark.asyncio
+    async def test_before_with_time_and_naive_datetime_as_utc(self, email_client):
+        imap = self._imap()
+        with (
+            patch.object(email_client, "imap_class", return_value=imap),
+            patch.object(email_client, "_batch_fetch_headers", return_value={}) as headers,
+        ):
+            _, total = await email_client.get_emails_metadata_page(before=datetime(2026, 10, 24, 15, 0))
+        assert total == 2  # UIDs 1 and 2; 15:00:00 itself is excluded
+        assert imap.uid_search.call_args.args == ("BEFORE", "25-OCT-2026")
+        headers.assert_awaited_once_with(imap, ["2", "1"])
+
+    @pytest.mark.asyncio
+    async def test_date_only_boundaries_fetch_no_dates(self, email_client):
+        imap = self._imap()
+        with (
+            patch.object(email_client, "imap_class", return_value=imap),
+            patch.object(email_client, "_batch_fetch_headers", return_value={}),
+        ):
+            _, total = await email_client.get_emails_metadata_page(since=datetime(2026, 10, 24))
+        assert total == 5
+        assert imap.uid_search.call_args.args == ("SINCE", "24-OCT-2026")
+        imap.uid.assert_not_called()

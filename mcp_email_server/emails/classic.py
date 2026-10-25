@@ -9,7 +9,7 @@ import time
 import unicodedata
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email import encoders
 from email.header import Header
 from email.headerregistry import Address
@@ -209,6 +209,18 @@ def _encode_mailbox_name(name: str) -> str:
         except (ValueError, UnicodeDecodeError):
             pass
     return _encode_modified_utf7(name)
+
+
+def _as_utc(value: datetime) -> datetime:
+    """A naive datetime is taken as UTC (as the tools document); aware ones are converted."""
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def _needs_exact_time_filter(value: datetime | None) -> bool:
+    """Whether a since/before boundary is finer than the whole UTC day IMAP SEARCH works in."""
+    if value is None:
+        return False
+    return _as_utc(value).time() != datetime.min.time()
 
 
 def _reject_unquotable(value: str, what: str) -> None:
@@ -844,6 +856,23 @@ class EmailClient:
 
         return chunk_dates
 
+    async def _filter_uids_by_internal_date(
+        self, imap, uids: list[str], since: datetime | None, before: datetime | None
+    ) -> list[str]:
+        """Keep the UIDs whose INTERNALDATE satisfies since <= date < before (exact to the second)."""
+        dates = await self._batch_fetch_dates(imap, [uid.encode() for uid in uids])
+        since_utc = _as_utc(since) if since else None
+        before_utc = _as_utc(before) if before else None
+        kept = [
+            uid
+            for uid in uids
+            if uid in dates
+            and (since_utc is None or dates[uid] >= since_utc)
+            and (before_utc is None or dates[uid] < before_utc)
+        ]
+        logger.info(f"Exact time filter kept {len(kept)} of {len(uids)} candidates")
+        return kept
+
     async def _batch_fetch_dates(
         self,
         imap: aioimaplib.IMAP4_SSL | aioimaplib.IMAP4,
@@ -954,9 +983,14 @@ class EmailClient:
             await _send_imap_id(imap)
             await _select_or_raise(imap, mailbox)
 
+            # IMAP SINCE/BEFORE compare whole days of the server's INTERNALDATE, so a
+            # boundary with a time of day is widened by a day here and enforced exactly
+            # below against each candidate's INTERNALDATE.
+            exact_since = _needs_exact_time_filter(since)
+            exact_before = _needs_exact_time_filter(before)
             search_criteria = self._build_search_criteria(
-                before,
-                since,
+                before + timedelta(days=1) if exact_before else before,
+                since - timedelta(days=1) if exact_since else since,
                 subject,
                 body=body,
                 text=text,
@@ -982,6 +1016,13 @@ class EmailClient:
                 return [], 0
 
             logger.info(f"Found {len(email_ids)} email IDs")
+
+            if exact_since or exact_before:
+                email_ids = await self._filter_uids_by_internal_date(
+                    imap, email_ids, since if exact_since else None, before if exact_before else None
+                )
+                if not email_ids:
+                    return [], 0
 
             # Sort by UID (monotonically increasing, approximates chronological order)
             sorted_uids = sorted(email_ids, key=lambda uid: int(uid), reverse=(order == "desc"))
