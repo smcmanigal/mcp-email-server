@@ -1,3 +1,5 @@
+import pytest
+
 from mcp_email_server.utils.html_converter import html_to_markdown
 
 
@@ -137,3 +139,68 @@ def test_invisible_preheader_padding_is_removed_but_emoji_joiners_kept():
     assert (
         html_to_text(f"<p>Sale ends tonight. {padding}</p><p>Hi {family}</p>") == f"Sale ends tonight.\n\nHi {family}"
     )
+
+
+class TestHtmlToTextLinks:
+    """Link URLs are kept in full, as footnotes by default (adapted from upstream #186)."""
+
+    URL = "https://example.com/verify?token=" + "a" * 300
+    HTML = (
+        f'<p>Please <a href="{URL}">verify your email</a>.</p><a href="https://shop.example/sale"><img src="b.png"></a>'
+    )
+
+    def test_footnotes_default_puts_content_first(self):
+        from mcp_email_server.utils.html_converter import html_to_text
+
+        assert html_to_text(self.HTML) == (
+            f"Please verify your email [1].\n\nLinks:\n[1] {self.URL}\n[2] https://shop.example/sale"
+        )
+
+    def test_footnotes_reuse_number_for_repeated_url(self):
+        from mcp_email_server.utils.html_converter import html_to_text
+
+        html = '<a href="https://x.example/a">One</a> <a href="https://x.example/b">Two</a> <a href="https://x.example/a">Again</a>'
+        assert html_to_text(html) == (
+            "One [1] Two [2] Again [1]\n\nLinks:\n[1] https://x.example/a\n[2] https://x.example/b"
+        )
+
+    def test_inline(self):
+        from mcp_email_server.utils.html_converter import html_to_text
+
+        assert html_to_text(self.HTML, links="inline") == (
+            f"Please verify your email ({self.URL}).\nhttps://shop.example/sale"
+        )
+
+    def test_none(self):
+        from mcp_email_server.utils.html_converter import html_to_text
+
+        assert html_to_text(self.HTML, links="none") == "Please verify your email."
+
+    def test_invalid_mode(self):
+        from mcp_email_server.utils.html_converter import html_to_text
+
+        with pytest.raises(ValueError, match="links must be one of"):
+            html_to_text("<p>x</p>", links="all")
+
+    def test_entities_in_href_decoded(self):
+        from mcp_email_server.utils.html_converter import html_to_text
+
+        assert html_to_text('<a href="https://x.example/?a=1&amp;b=2">Go</a>', links="inline") == (
+            "Go (https://x.example/?a=1&b=2)"
+        )
+
+    @pytest.mark.parametrize("links", ["footnotes", "inline"])
+    def test_text_that_is_the_url_not_repeated(self, links):
+        from mcp_email_server.utils.html_converter import html_to_text
+
+        assert html_to_text('<a href="https://example.com/">https://example.com</a>', links=links) == (
+            "https://example.com"
+        )
+
+    @pytest.mark.parametrize(
+        "href", ["#top", "mailto:help@example.com", "javascript:void(0)", " JavaScript:alert(1)", "java\tscript:x", ""]
+    )
+    def test_unhelpful_links_show_text_only(self, href):
+        from mcp_email_server.utils.html_converter import html_to_text
+
+        assert html_to_text(f'<a href="{href}">Contact us</a>') == "Contact us"

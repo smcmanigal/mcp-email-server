@@ -115,16 +115,55 @@ _TEXT_BLOCK_TAGS = {
 _TEXT_CELL_TAGS = {"td", "th"}
 
 
+def _useful_href(href: str | None) -> str | None:
+    """The link target worth showing, or None for in-page anchors, mailto: and javascript: links."""
+    if not href:
+        return None
+    href = "".join(ch for ch in href.strip() if ch.isprintable())
+    scheme = re.sub(r"\s", "", href).lower()
+    if not href or href.startswith("#") or scheme.startswith(("mailto:", "javascript:")):
+        return None
+    return href
+
+
+LINK_MODES = ("footnotes", "inline", "none")
+
+
+class _LinkFootnotes:
+    """Numbered link list for "footnotes" mode; a repeated URL keeps its first number."""
+
+    def __init__(self):
+        self.urls: list[str] = []
+        self._numbers: dict[str, int] = {}
+
+    def number(self, url: str) -> int:
+        if url not in self._numbers:
+            self.urls.append(url)
+            self._numbers[url] = len(self.urls)
+        return self._numbers[url]
+
+    def render(self) -> str:
+        if not self.urls:
+            return ""
+        return "\n\nLinks:\n" + "\n".join(f"[{n}] {url}" for n, url in enumerate(self.urls, 1))
+
+
 class _HtmlTextExtractor(HTMLParser):
     """Collect the readable text of an HTML document, with line breaks at block boundaries."""
 
-    def __init__(self):
+    def __init__(self, links: str = "footnotes", footnotes: _LinkFootnotes | None = None):
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
         self.skip_depth = 0
+        self.links = links
+        self.footnotes = footnotes or _LinkFootnotes()
+        self.link: tuple[str, int] | None = None  # (href, index in parts where its text starts)
 
     def handle_starttag(self, tag, attrs):
-        if tag == "body":
+        if tag == "a" and not self.skip_depth and self.links != "none":
+            href = _useful_href(dict(attrs).get("href"))
+            self.link = (href, len(self.parts)) if href else None
+        elif tag == "body":
             # A <head> that was never closed must not hide the body.
             self.skip_depth = 0
         elif tag in _TEXT_SKIP_TAGS:
@@ -139,7 +178,21 @@ class _HtmlTextExtractor(HTMLParser):
             self.parts.append("\n")
 
     def handle_endtag(self, tag):
-        if tag in _TEXT_SKIP_TAGS:
+        if tag == "a" and self.link:
+            href, start = self.link
+            self.link = None
+            text = " ".join("".join(self.parts[start:]).split())
+            if text.rstrip("/") == href.rstrip("/"):
+                pass  # the text already is the URL
+            elif self.links == "inline":
+                self.parts.append(f" ({href})" if text else f" {href} ")
+            else:
+                # Footnotes: a marker after the link text, the full URL in the list at the end.
+                # An image-only link has no text to mark, so it is only listed.
+                number = self.footnotes.number(href)
+                if text:
+                    self.parts.append(f" [{number}]")
+        elif tag in _TEXT_SKIP_TAGS:
             self.skip_depth = max(self.skip_depth - 1, 0)
         elif tag in _TEXT_BLOCK_TAGS:
             self.parts.append("\n")
@@ -158,16 +211,25 @@ def _is_invisible(ch: str) -> bool:
     return unicodedata.category(ch) == "Cf" and ch != "\u200d"
 
 
-def html_to_text(html_content: str) -> str:
+def html_to_text(html_content: str, links: str = "footnotes") -> str:
     """Convert an HTML email body to plain text for reading (used when there is no text/plain part).
 
     Built on the standard library parser: head/title/script/style are dropped, every
     entity is decoded, block elements and table rows become line breaks, table cells are
     separated, and runs of whitespace are collapsed.
+
+    links controls link URLs, always kept in full:
+    - "footnotes" (default): "text [n]" in place, numbered URLs in a "Links:" list at the
+      end, so the content comes first and body truncation cuts URLs before text;
+    - "inline": "text (URL)" in place;
+    - "none": text only.
+    In-page anchors, mailto: and javascript: links are never shown.
     """
+    if links not in LINK_MODES:
+        raise ValueError(f"links must be one of {', '.join(LINK_MODES)}, not {links!r}")
     if not html_content or not html_content.strip():
         return ""
-    extractor = _HtmlTextExtractor()
+    extractor = _HtmlTextExtractor(links)
     extractor.feed(html_content)
     extractor.close()
     text = "".join(extractor.parts).replace("\xa0", " ")
@@ -176,4 +238,4 @@ def html_to_text(html_content: str) -> str:
     # zero-width joiner that emoji sequences need.
     text = "".join(ch for ch in text if ch not in _ALSO_INVISIBLE and not _is_invisible(ch))
     lines = [re.sub(r"[ \t\r\f\v]+", " ", line).strip() for line in text.split("\n")]
-    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip() + extractor.footnotes.render()
