@@ -9,6 +9,15 @@
 
 IMAP and SMTP email client — available as both an MCP Server and a standalone CLI tool.
 
+> **This is a fork** of [ai-zerolab/mcp-email-server](https://github.com/ai-zerolab/mcp-email-server),
+> maintained at <https://github.com/smcmanigal/mcp-email-server>. It adds OAuth2 (Microsoft 365 and
+> Google), filter rules, a CLI, large-mail handling and many IMAP fixes, and it no longer merges
+> upstream: useful upstream fixes are ported by hand and every upstream PR's decision is recorded in
+> [docs/upstream-review.md](docs/upstream-review.md). The badges, PyPI (`uvx`/`pip`), Docker and
+> Smithery instructions below still refer to the upstream package, which does not include these
+> changes. To use this fork, install it from git (see [CLI Usage](#cli-usage)):
+> `uv tool install git+https://github.com/smcmanigal/mcp-email-server.git`
+
 - **Github repository**: <https://github.com/ai-zerolab/mcp-email-server/>
 - **Documentation** <https://ai-zerolab.github.io/mcp-email-server/>
 

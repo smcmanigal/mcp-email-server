@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Fork
+
+This repo (`origin` = smcmanigal/mcp-email-server) is a fork of ai-zerolab/mcp-email-server (`upstream`).
+
+- Never merge or rebase onto `upstream`. Port useful upstream fixes by hand, one fix per commit, with
+  `(port of upstream #NNN)` or `(adapted from upstream #NNN)` in the commit subject.
+- `docs/upstream-review.md` is the decision log for every upstream PR, and its "How to review" section
+  covers checking upstream for new PRs. Keep its notes to a few words; details go in commit messages.
+- Don't regress fork features when porting: OAuth2, filter rules, the CLI, `truncate_body`/`body_offset`,
+  `save_email_to_file`, and HTML-to-text/markdown link handling.
+
 ## Commands
 
 ```bash
