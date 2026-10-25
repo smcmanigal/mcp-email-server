@@ -92,7 +92,7 @@ Upstream PRs merged after our last merge (#122), newest first. Dates are upstrea
 | #182 | feat: add max_body_length to get_emails_content for configurable body truncation | 2026-07-05 | Not reviewed |  |  |
 | #190 | fix: declare CHARSET utf-8 for non-ASCII search criteria | 2026-07-05 | Adapted | b1556e8 | Literals for Gmail; clear error on M365 |
 | #180 | feat: add global sender allowlist for list_emails_metadata and get_emails_content | 2026-06-26 | Not reviewed |  |  |
-| #186 | fix(email): preserve useful HTML link URLs | 2026-06-25 | Not reviewed |  |  |
+| #186 | fix(email): preserve useful HTML link URLs | 2026-06-25 | Adapted | 5e701bc | Footnotes default; also bf36451, c68dd20 |
 | #181 | feat: add body / text / has_attachment filters to list_emails_metadata | 2026-06-25 | Adapted | e179d93 | body/text only; has_attachment skipped |
 | #183 | feat: add archive_emails tool | 2026-06-25 | Deferred |  | Archive tool; cheap after 9f502ed |
 | #139 | feat: add global recipient allowlist for send_email | 2026-06-24 | Not reviewed |  |  |
@@ -102,7 +102,7 @@ Upstream PRs merged after our last merge (#122), newest first. Dates are upstrea
 | #173 | Add reply_to parameter to send_email | 2026-05-29 | Not reviewed |  |  |
 | #171 | feat(config): support read-only email accounts | 2026-05-26 | Not reviewed |  |  |
 | #170 | fix(imap): fall back to UID order when dates are missing | 2026-05-26 | Already covered | 0cb906f | |
-| #169 | fix(email): parse HTML fallback with BeautifulSoup | 2026-05-26 | Not reviewed |  |  |
+| #169 | fix(email): parse HTML fallback with BeautifulSoup | 2026-05-26 | Adapted | 7fdb92e | stdlib parser, no bs4 |
 | #168 | fix(attachments): normalize filenames for download matching | 2026-05-26 | Ported | 5384d94 |  |
 | #167 | fix(imap): surface SELECT failures before mailbox operations | 2026-05-26 | Ported | cf781f0 | |
 | #166 | feat: add IMAP STARTTLS support | 2026-05-26 | Not reviewed |  |  |
