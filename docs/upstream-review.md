@@ -55,7 +55,7 @@ Upstream PRs merged after our last merge (#122), newest first. Dates are upstrea
 | #258 | fix: defer attachment filesystem access until the request is authorized | 2026-09-29 | Not reviewed |  |  |
 | #253 | Fix managed attachment content policy propagation | 2026-09-14 | Not reviewed |  |  |
 | #250 | fix: support explicit recipient glob allowlists | 2026-09-07 | Not reviewed |  |  |
-| #249 | feat: report the delivered Message-Id from send_email and forward_email | 2026-09-07 | Not reviewed |  |  |
+| #249 | feat: report the delivered Message-Id from send_email and forward_email | 2026-09-07 | Adapted | 5d44f27 | Message-ID only; no forward_email |
 | #248 | fix: deny recipient-bound operations for empty allowlists | 2026-09-07 | Not reviewed |  |  |
 | #246 | fix(container): correct OCI license label | 2026-09-04 | Not reviewed |  |  |
 | #245 | Restore a container image build and refresh the locked dependencies that carry advisories | 2026-09-04 | Adapted | dba336a | Latest allowed, not upstream pins |
@@ -89,7 +89,7 @@ Upstream PRs merged after our last merge (#122), newest first. Dates are upstrea
 | #187 | feat: enforce sender allowlist on mutation tools (follow-up to #180) | 2026-07-07 | Not reviewed | 0fdcddc | STORE side fix ported; allowlist open |
 | `32858e3` | feat(tests): add unit tests for installer functionality | 2026-07-06 | Not reviewed |  |  |
 | #193 | fix(email): encode only sender display name | 2026-07-05 | Ported | e4275fe | With #229 |
-| #182 | feat: add max_body_length to get_emails_content for configurable body truncation | 2026-07-05 | Not reviewed |  |  |
+| #182 | feat: add max_body_length to get_emails_content for configurable body truncation | 2026-07-05 | Adapted | da25634 | body_offset only; truncate_body kept |
 | #190 | fix: declare CHARSET utf-8 for non-ASCII search criteria | 2026-07-05 | Adapted | b1556e8 | Literals for Gmail; clear error on M365 |
 | #180 | feat: add global sender allowlist for list_emails_metadata and get_emails_content | 2026-06-26 | Not reviewed |  |  |
 | #186 | fix(email): preserve useful HTML link URLs | 2026-06-25 | Adapted | 5e701bc | Footnotes default; also bf36451, c68dd20 |
@@ -99,7 +99,7 @@ Upstream PRs merged after our last merge (#122), newest first. Dates are upstrea
 | #178 | fix: omit CHARSET in UID SEARCH so Exchange IMAP works | 2026-06-15 | Already covered | 7f85e71 | |
 | `0f60b13` | Add funding information for GitHub | 2026-06-03 | Not reviewed |  |  |
 | #174 | fix(imap): handle modified UTF-7 mailbox names | 2026-05-29 | Ported | 9f502ed, 4ef5cef | |
-| #173 | Add reply_to parameter to send_email | 2026-05-29 | Not reviewed |  |  |
+| #173 | Add reply_to parameter to send_email | 2026-05-29 | Ported | c0aa4c4 | Named reply_to_address / --reply-to-address |
 | #171 | feat(config): support read-only email accounts | 2026-05-26 | Not reviewed |  |  |
 | #170 | fix(imap): fall back to UID order when dates are missing | 2026-05-26 | Already covered | 0cb906f | |
 | #169 | fix(email): parse HTML fallback with BeautifulSoup | 2026-05-26 | Adapted | 7fdb92e | stdlib parser, no bs4 |
@@ -112,7 +112,7 @@ Upstream PRs merged after our last merge (#122), newest first. Dates are upstrea
 | #149 | feat: add mark_emails_as_read MCP tool | 2026-05-26 | Adapted | fc9be84 | PEEK fetch only; tool covered by flags |
 | #147 | feat: add move_emails and list_mailboxes tools | 2026-05-20 | Already covered | 1382757 | Our move/folder tools |
 | #160 | fix:inline attachment detection | 2026-05-09 | Adapted | 0d8dd4e | message_id already in 13e8ca0 |
-| #159 | fix(cli): allow HTTP transport host configuration | 2026-05-08 | Not reviewed |  |  |
+| #159 | fix(cli): allow HTTP transport host configuration | 2026-05-08 | Deferred |  | If HTTP transports run off localhost |
 | #155 | fix: sequential chunk fetching + timeout for large mailbox resilience | 2026-05-04 | Already covered | 8099559 | |
 | #151 | fix: reduce batch fetch chunk size to avoid RecursionError in aioimaplib | 2026-04-07 | Already covered | 8160fc1 | |
 | #133 | fix: prevent cleartext credential leak in dispatch_handler error message | 2026-03-18 | Already covered | a6dbd41 | Fork-only client-secret mask added |
