@@ -10,6 +10,7 @@ from mcp_email_server.app import (
     get_emails_content,
     list_available_accounts,
     list_emails_metadata,
+    move_emails_to_folder,
     send_email,
 )
 from mcp_email_server.config import EmailServer, EmailSettings, ProviderSettings
@@ -568,3 +569,31 @@ class TestMcpTools:
             )
 
             assert result.emails[0].message_id == "<test@example.com>"
+
+
+class TestMoveEmailsToFolderTool:
+    @pytest.mark.asyncio
+    async def test_does_not_create_folder_by_default(self):
+        """A misspelled target fails instead of creating a stray folder; the result says why."""
+        mock_handler = AsyncMock()
+        mock_handler.move_emails_to_folder.return_value = {"moved": [], "failed": ["1", "2"]}
+
+        with patch("mcp_email_server.app.dispatch_handler", return_value=mock_handler):
+            result = await move_emails_to_folder(account_name="test", email_ids=[1, "2"], target_folder="Recipts")
+
+        mock_handler.move_emails_to_folder.assert_awaited_once_with(["1", "2"], "Recipts", "INBOX", False)
+        assert result["total_failed"] == 2
+        assert "list_email_folders" in result["hint"]
+
+    @pytest.mark.asyncio
+    async def test_create_when_requested_and_no_hint_on_success(self):
+        mock_handler = AsyncMock()
+        mock_handler.move_emails_to_folder.return_value = {"moved": ["1"], "failed": []}
+
+        with patch("mcp_email_server.app.dispatch_handler", return_value=mock_handler):
+            result = await move_emails_to_folder(
+                account_name="test", email_ids=["1"], target_folder="Receipts", create_if_missing=True
+            )
+
+        mock_handler.move_emails_to_folder.assert_awaited_once_with(["1"], "Receipts", "INBOX", True)
+        assert result == {"moved": ["1"], "failed": [], "total_moved": 1, "total_failed": 0}

@@ -285,25 +285,40 @@ async def move_emails_to_folder(
         list[str | int],
         Field(description="List of email IDs to move."),
     ],
-    target_folder: Annotated[str, Field(description="The target folder name.")],
+    target_folder: Annotated[
+        str,
+        Field(description="The target folder name, exactly as returned by list_email_folders."),
+    ],
     source_mailbox: Annotated[
         str,
         Field(default="INBOX", description="The source mailbox (default: INBOX)."),
     ] = "INBOX",
     create_if_missing: Annotated[
         bool,
-        Field(default=True, description="Create folder if it doesn't exist"),
-    ] = True,
+        Field(
+            default=False,
+            description=(
+                "Create target_folder if it doesn't exist. Off by default so a misspelled name fails "
+                "instead of creating a stray folder; set true only when a new folder is intended."
+            ),
+        ),
+    ] = False,
 ) -> dict[str, Any]:
     handler = dispatch_handler(account_name)
     id_strings = [str(eid) for eid in email_ids]
     result = await handler.move_emails_to_folder(id_strings, target_folder, source_mailbox, create_if_missing)
-    return {
+    response = {
         "moved": result["moved"],
         "failed": result["failed"],
         "total_moved": len(result["moved"]),
         "total_failed": len(result["failed"]),
     }
+    if result["failed"] and not result["moved"] and not create_if_missing:
+        response["hint"] = (
+            f"Nothing was moved. If '{target_folder}' does not exist, check list_email_folders for the exact "
+            "name, or pass create_if_missing=true to create it."
+        )
+    return response
 
 
 @mcp.tool(
