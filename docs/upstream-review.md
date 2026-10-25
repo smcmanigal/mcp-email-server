@@ -59,7 +59,7 @@ Upstream PRs merged after our last merge (#122), newest first. Dates are upstrea
 | #248 | fix: deny recipient-bound operations for empty allowlists | 2026-09-07 | Not reviewed |  |  |
 | #246 | fix(container): correct OCI license label | 2026-09-04 | Not reviewed |  |  |
 | #245 | Restore a container image build and refresh the locked dependencies that carry advisories | 2026-09-04 | Adapted | dba336a | Latest allowed, not upstream pins |
-| #244 | fix(metadata): enforce exact datetime filtering | 2026-09-03 | Not reviewed |  |  |
+| #244 | fix(metadata): enforce exact datetime filtering | 2026-09-03 | Adapted | 85f433b | Only when a time is given; also a70adf7 |
 | #242 | feat: add semantic IMAP tags and embedded attachment content | 2026-09-01 | Not reviewed |  |  |
 | #239 | Fix bare Message-IDs in reply threading headers | 2026-08-28 | Adapted | 47fdb62 | Description change only |
 | #237 | fix(imap): handle omitted empty search responses | 2026-08-26 | Ported | 9dcecb0 | Stricter: any non-numeric line is empty |
@@ -90,33 +90,33 @@ Upstream PRs merged after our last merge (#122), newest first. Dates are upstrea
 | `32858e3` | feat(tests): add unit tests for installer functionality | 2026-07-06 | Not reviewed |  |  |
 | #193 | fix(email): encode only sender display name | 2026-07-05 | Ported | e4275fe | With #229 |
 | #182 | feat: add max_body_length to get_emails_content for configurable body truncation | 2026-07-05 | Not reviewed |  |  |
-| #190 | fix: declare CHARSET utf-8 for non-ASCII search criteria | 2026-07-05 | Not reviewed |  |  |
+| #190 | fix: declare CHARSET utf-8 for non-ASCII search criteria | 2026-07-05 | Adapted | b1556e8 | Literals for Gmail; clear error on M365 |
 | #180 | feat: add global sender allowlist for list_emails_metadata and get_emails_content | 2026-06-26 | Not reviewed |  |  |
 | #186 | fix(email): preserve useful HTML link URLs | 2026-06-25 | Not reviewed |  |  |
-| #181 | feat: add body / text / has_attachment filters to list_emails_metadata | 2026-06-25 | Not reviewed |  |  |
+| #181 | feat: add body / text / has_attachment filters to list_emails_metadata | 2026-06-25 | Adapted | e179d93 | body/text only; has_attachment skipped |
 | #183 | feat: add archive_emails tool | 2026-06-25 | Deferred |  | Archive tool; cheap after 9f502ed |
 | #139 | feat: add global recipient allowlist for send_email | 2026-06-24 | Not reviewed |  |  |
-| #178 | fix: omit CHARSET in UID SEARCH so Exchange IMAP works | 2026-06-15 | Not reviewed |  |  |
+| #178 | fix: omit CHARSET in UID SEARCH so Exchange IMAP works | 2026-06-15 | Already covered | 7f85e71 | |
 | `0f60b13` | Add funding information for GitHub | 2026-06-03 | Not reviewed |  |  |
 | #174 | fix(imap): handle modified UTF-7 mailbox names | 2026-05-29 | Ported | 9f502ed, 4ef5cef | |
 | #173 | Add reply_to parameter to send_email | 2026-05-29 | Not reviewed |  |  |
 | #171 | feat(config): support read-only email accounts | 2026-05-26 | Not reviewed |  |  |
-| #170 | fix(imap): fall back to UID order when dates are missing | 2026-05-26 | Not reviewed |  |  |
+| #170 | fix(imap): fall back to UID order when dates are missing | 2026-05-26 | Already covered | 0cb906f | |
 | #169 | fix(email): parse HTML fallback with BeautifulSoup | 2026-05-26 | Not reviewed |  |  |
 | #168 | fix(attachments): normalize filenames for download matching | 2026-05-26 | Ported | 5384d94 |  |
 | #167 | fix(imap): surface SELECT failures before mailbox operations | 2026-05-26 | Ported | cf781f0 | |
 | #166 | feat: add IMAP STARTTLS support | 2026-05-26 | Not reviewed |  |  |
 | #163 | fix(imap): check LOGIN response.result, raise on failure | 2026-05-26 | Ported | 3552b6c |  |
 | #137 | feat: add save_to_mailbox tool for IMAP APPEND to arbitrary folders | 2026-05-26 | Not reviewed |  |  |
-| #135 | refactor: Remove get_email_count, derive total from search results | 2026-05-26 | Not reviewed |  |  |
+| #135 | refactor: Remove get_email_count, derive total from search results | 2026-05-26 | Ported | a61718c | |
 | #149 | feat: add mark_emails_as_read MCP tool | 2026-05-26 | Adapted | fc9be84 | PEEK fetch only; tool covered by flags |
 | #147 | feat: add move_emails and list_mailboxes tools | 2026-05-20 | Already covered | 1382757 | Our move/folder tools |
 | #160 | fix:inline attachment detection | 2026-05-09 | Adapted | 0d8dd4e | message_id already in 13e8ca0 |
 | #159 | fix(cli): allow HTTP transport host configuration | 2026-05-08 | Not reviewed |  |  |
-| #155 | fix: sequential chunk fetching + timeout for large mailbox resilience | 2026-05-04 | Not reviewed |  |  |
-| #151 | fix: reduce batch fetch chunk size to avoid RecursionError in aioimaplib | 2026-04-07 | Not reviewed |  |  |
+| #155 | fix: sequential chunk fetching + timeout for large mailbox resilience | 2026-05-04 | Already covered | 8099559 | |
+| #151 | fix: reduce batch fetch chunk size to avoid RecursionError in aioimaplib | 2026-04-07 | Already covered | 8160fc1 | |
 | #133 | fix: prevent cleartext credential leak in dispatch_handler error message | 2026-03-18 | Already covered | a6dbd41 | Fork-only client-secret mask added |
-| #134 | Fix: Quote multi-word IMAP search criteria values | 2026-03-13 | Not reviewed |  |  |
+| #134 | Fix: Quote multi-word IMAP search criteria values | 2026-03-13 | Already covered | 1382757 | |
 | — | 15 pre-commit.ci autoupdates, 2026-03-18 to 2026-09-29 | various | Not applicable | | Tooling only |
 
 ## Ruled-out directions
