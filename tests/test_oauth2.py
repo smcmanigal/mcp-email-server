@@ -305,13 +305,14 @@ class TestGoogleTokenManager:
 
     def test_expiry_round_trips_through_cache(self, tmp_path):
         """Expiry is persisted so a later process knows when the access token goes stale."""
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
         from google.oauth2.credentials import Credentials
 
         cache_path = tmp_path / "google_cache.json"
         manager = GoogleTokenManager(client_id="cid", client_secret="csec", cache_path=cache_path)
-        expiry = datetime.utcnow().replace(microsecond=0) + timedelta(hours=1)
+        # google-auth keeps expiry as naive UTC
+        expiry = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0) + timedelta(hours=1)
         creds = Credentials(token="tok", refresh_token="rt", client_id="cid", client_secret="csec", expiry=expiry)
 
         manager._save_credentials("user@gmail.com", creds)
@@ -323,7 +324,7 @@ class TestGoogleTokenManager:
 
     def test_missing_expiry_forces_refresh(self, tmp_path):
         """A cache entry with no expiry (written by older versions) is refreshed once and gains one."""
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
         cache_path = tmp_path / "google_cache.json"
         cache_path.write_text(
@@ -339,7 +340,7 @@ class TestGoogleTokenManager:
 
         def fake_refresh(self, request):
             self.token = "fresh_token"
-            self.expiry = datetime.utcnow() + timedelta(hours=1)
+            self.expiry = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1)
 
         with (
             patch("google.oauth2.credentials.Credentials.refresh", fake_refresh),
