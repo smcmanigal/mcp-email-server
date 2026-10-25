@@ -244,6 +244,50 @@ def _parse_internal_date(value: str) -> datetime | None:
     )
 
 
+_QUOTED_STRING = re.compile(r'"((?:[^"\\]|\\.)*)"')
+_LITERAL_MINUS_MAX = 4096  # RFC 7888: LITERAL- allows non-synchronizing literals up to 4096 bytes
+
+
+async def _uid_search(imap, criteria: list[str]):
+    """UID SEARCH that handles non-ASCII values (port of upstream #190, adapted).
+
+    ASCII criteria are sent exactly as before, without CHARSET (M365 rejects CHARSET
+    UTF-8). Non-ASCII values need CHARSET UTF-8, and RFC 3501 quoted strings must be
+    7-bit, so where the server allows non-synchronizing literals (LITERAL+, or LITERAL-
+    up to 4096 bytes) each non-ASCII quoted value is sent as {n+} literal; Gmail rejects
+    it quoted. Servers without literal support get the quoted form, which Dovecot-style
+    servers accept. If the server refuses a non-ASCII search (BAD, or NO [BADCHARSET]
+    as M365 does), raise instead of reporting it as "no matches".
+    """
+    if all(criterion.isascii() for criterion in criteria):
+        return await imap.uid_search(*criteria, charset=None)
+
+    literal_plus = _imap_has_capability(imap, "LITERAL+")
+    if literal_plus or _imap_has_capability(imap, "LITERAL-"):
+
+        def to_literal(match: re.Match) -> str:
+            value = re.sub(r"\\(.)", r"\1", match.group(1))
+            encoded = value.encode("utf-8")
+            if value.isascii() or (not literal_plus and len(encoded) > _LITERAL_MINUS_MAX):
+                return match.group(0)
+            return f"{{{len(encoded)}+}}\r\n{value}"
+
+        criteria = [_QUOTED_STRING.sub(to_literal, criterion) for criterion in criteria]
+
+    response = await imap.uid_search(*criteria, charset="UTF-8")
+    result, lines = response
+    if result != "OK":
+        detail = " ".join(
+            line.decode("utf-8", errors="replace") if isinstance(line, bytes | bytearray) else str(line)
+            for line in (lines or [])
+        )
+        if result == "BAD" or "BADCHARSET" in detail.upper():
+            raise ValueError(
+                f"This IMAP server does not support searching for non-ASCII text ({result}: {detail.strip()})"
+            )
+    return response
+
+
 def _reject_unquotable(value: str, what: str) -> None:
     """Raise if value cannot appear in an IMAP quoted string (RFC 3501: no CR, LF or NUL).
 
@@ -1026,8 +1070,7 @@ class EmailClient:
             logger.info(f"Get metadata: Search criteria: {search_criteria}")
 
             # Search for messages - use UID SEARCH for better compatibility
-            # Use charset=None to avoid CHARSET utf-8 which M365 rejects
-            result, messages = await imap.uid_search(*search_criteria, charset=None)
+            result, messages = await _uid_search(imap, search_criteria)
 
             # Handle errors or empty responses
             if result != "OK":
@@ -1791,7 +1834,7 @@ class EmailClient:
             chunk = values[i : i + chunk_size]
             or_criteria = self._build_or_criteria(field, chunk)
             search_criteria = date_criteria + or_criteria
-            result, messages = await imap.uid_search(*search_criteria, charset=None)
+            result, messages = await _uid_search(imap, search_criteria)
             if result != "OK":
                 logger.warning(
                     f"IMAP search returned {result!r} for {field} chunk of {len(chunk)} values "
