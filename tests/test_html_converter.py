@@ -257,3 +257,50 @@ def test_plain_text_body_relocates_urls_and_html_fallback_does_not_double_proces
     msg.add_alternative(f'<p>BIG SALE <a href="{long}">shop</a></p>', subtype="html")
     body = EmailClient(MagicMock())._parse_email_data(msg.as_bytes())["body"]
     assert body == f"BIG SALE [1]\n\nLinks:\n[1] {long}"
+
+
+class TestLinksParameterPlumbing:
+    def test_parse_email_data_honours_links_mode(self):
+        from email.message import EmailMessage
+        from unittest.mock import MagicMock
+
+        from mcp_email_server.emails.classic import EmailClient
+
+        msg = EmailMessage()
+        msg["Subject"] = "x"
+        msg.set_content('<p><a href="https://x.example/a">Go</a></p>', subtype="html")
+        client = EmailClient(MagicMock())
+        assert client._parse_email_data(msg.as_bytes(), links="inline")["body"] == "Go (https://x.example/a)"
+        assert client._parse_email_data(msg.as_bytes(), links="none")["body"] == "Go"
+
+    @pytest.mark.asyncio
+    async def test_mcp_tool_passes_links(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from mcp_email_server import app as app_module
+
+        handler = MagicMock()
+        handler.get_emails_content = AsyncMock(return_value=MagicMock())
+        with patch("mcp_email_server.app.dispatch_handler", return_value=handler):
+            await app_module.get_emails_content("acct", ["1"], "INBOX", None, "none")
+        handler.get_emails_content.assert_awaited_once_with(["1"], "INBOX", None, "none")
+
+    def test_cli_links_option_and_validation(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from typer.testing import CliRunner
+
+        from mcp_email_server.cli import app
+        from mcp_email_server.emails.models import EmailContentBatchResponse
+
+        handler = MagicMock()
+        handler.get_emails_content = AsyncMock(
+            return_value=EmailContentBatchResponse(emails=[], requested_count=1, retrieved_count=0, failed_ids=[])
+        )
+        with patch("mcp_email_server.cli.emails.dispatch_handler", return_value=handler):
+            ok = CliRunner().invoke(app, ["emails", "read", "-a", "acct", "--links", "inline", "1"])
+            bad = CliRunner().invoke(app, ["emails", "read", "-a", "acct", "--links", "all", "1"])
+        assert ok.exit_code == 0, ok.output
+        handler.get_emails_content.assert_awaited_once_with(["1"], "INBOX", None, "inline")
+        assert bad.exit_code == 1
+        assert "--links must be one of" in bad.output

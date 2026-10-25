@@ -138,9 +138,21 @@ async def get_emails_content(
             description="Maximum number of characters for email body content. If specified, body content longer than this will be truncated. If not specified, defaults to 20000 characters.",
         ),
     ] = None,
+    links: Annotated[
+        Literal["footnotes", "inline", "none"],
+        Field(
+            default="footnotes",
+            description=(
+                "How link URLs appear in the body; URLs are never shortened. 'footnotes' (default): link text "
+                "is marked [n] and the full URLs are listed under 'Links:' at the end, so the content comes "
+                "first and truncation cuts URLs before text. 'inline': 'text (URL)' in place, for acting on a "
+                "specific link. 'none': text only. In plain-text bodies only URLs of 100+ characters move."
+            ),
+        ),
+    ] = "footnotes",
 ) -> EmailContentBatchResponse:
     handler = dispatch_handler(account_name)
-    return await handler.get_emails_content(email_ids, mailbox, truncate_body)
+    return await handler.get_emails_content(email_ids, mailbox, truncate_body, links)
 
 
 @mcp.tool(

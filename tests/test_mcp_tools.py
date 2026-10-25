@@ -269,7 +269,7 @@ class TestMcpTools:
             assert result.emails[0].subject == "Test Subject"
 
             # Verify dispatch_handler and get_emails_content were called correctly
-            mock_handler.get_emails_content.assert_called_once_with(["12345"], "INBOX", None)
+            mock_handler.get_emails_content.assert_called_once_with(["12345"], "INBOX", None, "footnotes")
 
     @pytest.mark.asyncio
     async def test_get_emails_content_batch(self):
@@ -325,7 +325,9 @@ class TestMcpTools:
             assert result.emails[1].email_id == "12346"
 
             # Verify dispatch_handler and get_emails_content were called correctly
-            mock_handler.get_emails_content.assert_called_once_with(["12345", "12346", "12347"], "INBOX", None)
+            mock_handler.get_emails_content.assert_called_once_with(
+                ["12345", "12346", "12347"], "INBOX", None, "footnotes"
+            )
 
     @pytest.mark.asyncio
     async def test_get_emails_content_with_mailbox(self):
@@ -359,7 +361,7 @@ class TestMcpTools:
             )
 
             assert result == batch_response
-            mock_handler.get_emails_content.assert_called_once_with(["12345"], "Sent", None)
+            mock_handler.get_emails_content.assert_called_once_with(["12345"], "Sent", None, "footnotes")
 
     @pytest.mark.asyncio
     async def test_send_email(self):

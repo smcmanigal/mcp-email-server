@@ -15,6 +15,7 @@ from mcp_email_server.cli.formatting import (
     print_success,
 )
 from mcp_email_server.emails.dispatcher import dispatch_handler
+from mcp_email_server.utils.html_converter import LINK_MODES
 
 emails_app = typer.Typer(help="Email operations")
 
@@ -71,12 +72,18 @@ def read_emails(
     account: Annotated[str, typer.Option("--account", "-a", help="Email account name")],
     mailbox: Annotated[str, typer.Option(help="Mailbox to search")] = "INBOX",
     truncate: Annotated[int | None, typer.Option(help="Max body characters")] = None,
+    links: Annotated[
+        str,
+        typer.Option(help="Link URLs: footnotes (listed at the end), inline (in place), or none"),
+    ] = "footnotes",
     json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
 ) -> None:
     """Get full email content by ID."""
     try:
+        if links not in LINK_MODES:
+            raise ValueError(f"--links must be one of {', '.join(LINK_MODES)}")
         handler = dispatch_handler(account)
-        result = asyncio.run(handler.get_emails_content(email_ids, mailbox, truncate))
+        result = asyncio.run(handler.get_emails_content(email_ids, mailbox, truncate, links))
         if json_output:
             print_json(result)
         else:
