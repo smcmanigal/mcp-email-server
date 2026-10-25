@@ -52,13 +52,6 @@ def streamable_http(
 
 
 @app.command()
-def ui():
-    from mcp_email_server.ui import main as ui_main
-
-    ui_main()
-
-
-@app.command()
 def reset():
     delete_settings()
     typer.echo("✅ Config reset")

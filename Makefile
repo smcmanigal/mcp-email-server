@@ -33,9 +33,4 @@ help:
 	@uv run python -c "import re; \
 	[[print(f'\033[36m{m[0]:<20}\033[0m {m[1]}') for m in re.findall(r'^([a-zA-Z_-]+):.*?## (.*)$$', open(makefile).read(), re.M)] for makefile in ('$(MAKEFILE_LIST)').strip().split()]"
 
-.PHONY: install-claude-desktop
-install-claude-desktop: ## Install the desktop application
-	@uv sync
-	@python dev/install_claude_desktop.py
-
 .DEFAULT_GOAL := help

@@ -30,9 +30,6 @@ make check            # lock file check + pre-commit + deptry
 # Run the MCP server locally (stdio transport)
 uv run mcp-email-server stdio
 
-# Configure via UI
-uv run mcp-email-server ui
-
 # CLI (after global install)
 mcp-email-server accounts list
 mcp-email-server accounts add-oauth2          # interactive OAuth2 setup (M365/Google)
@@ -73,7 +70,7 @@ The project is both an **MCP server** and a **CLI tool** sharing the same core l
 ### Entry points
 
 - **MCP server**: `mcp_email_server/app.py` — defines all MCP tools using `FastMCP`. Each tool calls `dispatch_handler(account_name)` to get an `EmailHandler`, then delegates.
-- **CLI**: `mcp_email_server/cli/__init__.py` — Typer app that registers sub-apps (`accounts`, `emails`, `folders`, `flags`, `rules`) and top-level commands (`stdio`, `sse`, `streamable-http`, `ui`, `reset`). The CLI sub-commands in `cli/emails.py`, etc. call the same underlying handler methods.
+- **CLI**: `mcp_email_server/cli/__init__.py` — Typer app that registers sub-apps (`accounts`, `emails`, `folders`, `flags`, `rules`) and top-level commands (`stdio`, `sse`, `streamable-http`, `reset`). The CLI sub-commands in `cli/emails.py`, etc. call the same underlying handler methods.
 
 ### Handler abstraction
 

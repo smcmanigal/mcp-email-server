@@ -23,7 +23,7 @@ IMAP and SMTP email client — available as both an MCP Server and a standalone 
 
 We recommend using [uv](https://github.com/astral-sh/uv) to manage your environment.
 
-Try `uvx mcp-email-server@latest ui` to config, and use following configuration for mcp client:
+Use the following configuration for your MCP client:
 
 ```json
 {
@@ -38,11 +38,11 @@ Try `uvx mcp-email-server@latest ui` to config, and use following configuration 
 
 This package is available on PyPI, so you can install it using `pip install mcp-email-server`
 
-After that, configure your email server using the ui: `mcp-email-server ui`
+After that, add an account with the CLI: `mcp-email-server accounts add`, or `mcp-email-server accounts add-oauth2` for Microsoft 365 and Google (see [Account Management](#account-management)).
 
 ### Environment Variable Configuration
 
-You can also configure the email server using environment variables, which is particularly useful for CI/CD environments like Jenkins. zerolib-email supports both UI configuration (via TOML file) and environment variables, with environment variables taking precedence.
+You can also configure the email server using environment variables, which is particularly useful for CI/CD environments like Jenkins. zerolib-email supports both the TOML config file and environment variables, with environment variables taking precedence.
 
 ```json
 {
