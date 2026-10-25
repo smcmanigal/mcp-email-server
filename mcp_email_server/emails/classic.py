@@ -132,6 +132,85 @@ def _iter_list_entries(lines: list) -> list[tuple[list[str], str | None, str]]:
     return entries
 
 
+def _encode_modified_utf7(name: str) -> str:
+    """Encode a mailbox name as RFC 3501 modified UTF-7 (section 5.1.3).
+
+    Printable ASCII stands for itself except "&", which becomes "&-"; any other run of
+    characters becomes "&" + base64 of its UTF-16BE (with "," for "/", no padding) + "-".
+    """
+    out = []
+    run = []
+
+    def flush():
+        if run:
+            encoded = base64.b64encode("".join(run).encode("utf-16-be")).decode("ascii")
+            out.append("&" + encoded.rstrip("=").replace("/", ",") + "-")
+            run.clear()
+
+    for ch in name:
+        if 0x20 <= ord(ch) <= 0x7E:
+            flush()
+            out.append("&-" if ch == "&" else ch)
+        else:
+            run.append(ch)
+    flush()
+    return "".join(out)
+
+
+def _decode_modified_utf7(name: str) -> str:
+    """Decode an RFC 3501 modified UTF-7 mailbox name; raises ValueError if it is malformed."""
+    out = []
+    i = 0
+    while i < len(name):
+        ch = name[i]
+        if ch != "&":
+            out.append(ch)
+            i += 1
+            continue
+        end = name.find("-", i + 1)
+        if end == -1:
+            raise ValueError(f"Unterminated modified UTF-7 sequence in {name!r}")
+        chunk = name[i + 1 : end]
+        if not chunk:
+            out.append("&")
+        else:
+            if not re.fullmatch(r"[A-Za-z0-9+,]+", chunk):
+                raise ValueError(f"Invalid modified UTF-7 sequence in {name!r}")
+            data = chunk.replace(",", "/")
+            raw = base64.b64decode(data + "=" * (-len(data) % 4))
+            out.append(raw.decode("utf-16-be"))
+        i = end + 1
+    return "".join(out)
+
+
+def _decode_mailbox_name(name: str) -> str:
+    """Decode a mailbox name from the server for display; returns it unchanged if not valid mUTF-7."""
+    if "&" not in name:
+        return name
+    try:
+        return _decode_modified_utf7(name)
+    except (ValueError, UnicodeDecodeError):
+        return name
+
+
+def _encode_mailbox_name(name: str) -> str:
+    """Encode a mailbox name for the wire, leaving an already-encoded name alone.
+
+    Callers may pass a decoded name ("Änderungen") or, from older configs and rules, the
+    encoded form ("&AMQ-nderungen"). An ASCII name that is canonical modified UTF-7 is
+    sent as is so it is not double-encoded; a literal "&" (e.g. "Tom & Jerry") is encoded.
+    """
+    if name.isascii():
+        if "&" not in name:
+            return name
+        try:
+            if _encode_modified_utf7(_decode_modified_utf7(name)) == name:
+                return name
+        except (ValueError, UnicodeDecodeError):
+            pass
+    return _encode_modified_utf7(name)
+
+
 def _reject_unquotable(value: str, what: str) -> None:
     """Raise if value cannot appear in an IMAP quoted string (RFC 3501: no CR, LF or NUL).
 
@@ -157,7 +236,7 @@ def _quote_mailbox(mailbox: str) -> str:
     # Per RFC 3501, literal double-quote characters in a quoted string must
     # be escaped with a backslash. Backslashes themselves must also be escaped.
     _reject_unquotable(mailbox, "Mailbox name")
-    escaped = mailbox.replace("\\", "\\\\").replace('"', r"\"")
+    escaped = _encode_mailbox_name(mailbox).replace("\\", "\\\\").replace('"', r"\"")
     return f'"{escaped}"'
 
 
@@ -1372,6 +1451,7 @@ class EmailClient:
             # e.g. (\Sent \HasNoChildren) "/" "Gesendete Objekte" or (\Sent) "/" Sent
             for flags, _delimiter, folder_name in _iter_list_entries(folders):
                 if any(flag.lower() == "\\sent" for flag in flags):
+                    folder_name = _decode_mailbox_name(folder_name)
                     logger.info(f"Found Sent folder by \\Sent flag: '{folder_name}'")
                     return folder_name
         except Exception as e:
@@ -2093,7 +2173,7 @@ class ClassicEmailHandler(EmailHandler):
 
             for flags, delimiter, name in _iter_list_entries(folders):
                 folder_info.append({
-                    "name": name,
+                    "name": _decode_mailbox_name(name),
                     "delimiter": delimiter,
                     "flags": flags,
                     "can_select": not any(flag.lower() in ("\\noselect", "\\nonexistent") for flag in flags),
