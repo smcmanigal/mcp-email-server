@@ -262,7 +262,6 @@ class ProviderSettings(AccountAttributes):
 class Settings(BaseSettings):
     emails: list[EmailSettings] = []
     providers: list[ProviderSettings] = []
-    db_location: str = CONFIG_PATH.with_name("db.sqlite3").as_posix()
     enable_attachment_download: bool = False
 
     model_config = SettingsConfigDict(toml_file=CONFIG_PATH, validate_assignment=True, revalidate_instances="always")
@@ -346,15 +345,6 @@ class Settings(BaseSettings):
         if masked:
             return [account.masked() for account in accounts]
         return accounts
-
-    @model_validator(mode="after")
-    @classmethod
-    def _resolve_db_location(cls, obj: Settings) -> Settings:
-        """Resolve relative db_location paths against the config directory."""
-        db_path = Path(obj.db_location)
-        if not db_path.is_absolute():
-            obj.db_location = (CONFIG_PATH.parent / db_path).resolve().as_posix()
-        return obj
 
     @model_validator(mode="after")
     @classmethod
