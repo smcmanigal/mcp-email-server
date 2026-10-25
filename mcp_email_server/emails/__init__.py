@@ -75,9 +75,9 @@ class EmailHandler(abc.ABC):
         attachments: list[str] | None = None,
         in_reply_to: str | None = None,
         references: str | None = None,
-    ) -> None:
+    ) -> str | None:
         """
-        Send email
+        Send email and return the Message-Id header of the sent message.
 
         Args:
             recipients: List of recipient email addresses.

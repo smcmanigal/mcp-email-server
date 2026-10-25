@@ -2214,7 +2214,7 @@ class ClassicEmailHandler(EmailHandler):
         attachments: list[str] | None = None,
         in_reply_to: str | None = None,
         references: str | None = None,
-    ) -> None:
+    ) -> str | None:
         msg = await self.outgoing_client.send_email(
             recipients, subject, body, cc, bcc, html, attachments, in_reply_to, references
         )
@@ -2235,6 +2235,8 @@ class ClassicEmailHandler(EmailHandler):
                 )
             except Exception as e:
                 logger.error(f"Failed to save email to Sent folder: {e}", exc_info=True)
+
+        return msg["Message-Id"] if msg else None
 
     async def delete_emails(self, email_ids: list[str], mailbox: str = "INBOX") -> tuple[list[str], list[str]]:
         """Delete emails by their UIDs. Returns (deleted_ids, failed_ids)."""

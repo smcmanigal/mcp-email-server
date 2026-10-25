@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Annotated
 
 import typer
+from rich.markup import escape
 
 from mcp_email_server.cli.formatting import (
     print_email_content,
@@ -120,7 +121,7 @@ def send_email(
             body = sys.stdin.read()
 
         handler = dispatch_handler(account)
-        asyncio.run(
+        message_id = asyncio.run(
             handler.send_email(
                 recipients=to,
                 subject=subject,
@@ -134,7 +135,8 @@ def send_email(
         )
         recipient_str = ", ".join(to)
         attachment_info = f" with {len(attachment)} attachment(s)" if attachment else ""
-        print_success(f"Email sent to {recipient_str}{attachment_info}")
+        message_id_info = f" (Message-ID: {escape(message_id)})" if message_id else ""
+        print_success(f"Email sent to {recipient_str}{attachment_info}{message_id_info}")
     except typer.Exit:
         raise
     except Exception as e:

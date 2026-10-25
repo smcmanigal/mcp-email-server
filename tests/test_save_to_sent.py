@@ -242,6 +242,28 @@ class TestClassicEmailHandlerSaveToSent:
                 mock_send.assert_called_once()
                 mock_append.assert_not_called()
 
+    @pytest.mark.parametrize("save_to_sent", [True, False])
+    @pytest.mark.asyncio
+    async def test_send_email_returns_message_id(
+        self, save_to_sent, email_settings_with_save_to_sent, email_settings_without_save_to_sent
+    ):
+        """send_email returns the Message-Id header whether or not a Sent copy is saved."""
+        settings = email_settings_with_save_to_sent if save_to_sent else email_settings_without_save_to_sent
+        handler = ClassicEmailHandler(settings)
+
+        mock_msg = MIMEText("Test body")
+        mock_msg["Message-Id"] = "<abc123@example.com>"
+
+        with patch.object(handler.outgoing_client, "send_email", AsyncMock(return_value=mock_msg)):
+            with patch.object(handler.outgoing_client, "append_to_sent", AsyncMock(return_value=True)):
+                message_id = await handler.send_email(
+                    recipients=["recipient@example.com"],
+                    subject="Test",
+                    body="Test body",
+                )
+
+        assert message_id == "<abc123@example.com>"
+
 
 class TestEmailClientAppendToSent:
     """Tests for EmailClient.append_to_sent method."""

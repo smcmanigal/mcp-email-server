@@ -156,7 +156,10 @@ async def get_emails_content(
 
 
 @mcp.tool(
-    description="Send an email using the specified account. Supports replying to emails with proper threading when in_reply_to is provided.",
+    description=(
+        "Send an email using the specified account. Supports replying to emails with proper threading when "
+        "in_reply_to is provided. Returns the Message-ID of the sent email, which can be used to thread follow-ups."
+    ),
 )
 async def send_email(
     account_name: Annotated[str, Field(description="The name of the email account to send from.")],
@@ -205,7 +208,7 @@ async def send_email(
     ] = None,
 ) -> str:
     handler = dispatch_handler(account_name)
-    await handler.send_email(
+    message_id = await handler.send_email(
         recipients,
         subject,
         body,
@@ -218,7 +221,8 @@ async def send_email(
     )
     recipient_str = ", ".join(recipients)
     attachment_info = f" with {len(attachments)} attachment(s)" if attachments else ""
-    return f"Email sent successfully to {recipient_str}{attachment_info}"
+    message_id_info = f". Message-ID: {message_id}" if message_id else ""
+    return f"Email sent successfully to {recipient_str}{attachment_info}{message_id_info}"
 
 
 @mcp.tool(

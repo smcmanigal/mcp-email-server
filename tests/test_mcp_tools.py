@@ -368,6 +368,7 @@ class TestMcpTools:
         """Test send_email MCP tool."""
         # Mock the dispatch_handler function
         mock_handler = AsyncMock()
+        mock_handler.send_email.return_value = "<abc123@example.com>"
 
         with patch("mcp_email_server.app.dispatch_handler", return_value=mock_handler):
             # Call the function
@@ -381,7 +382,7 @@ class TestMcpTools:
             )
 
             # Verify the return value
-            assert result == "Email sent successfully to recipient@example.com"
+            assert result == "Email sent successfully to recipient@example.com. Message-ID: <abc123@example.com>"
 
             # Verify send_email was called correctly
             mock_handler.send_email.assert_called_once_with(
@@ -395,6 +396,22 @@ class TestMcpTools:
                 None,  # in_reply_to
                 None,  # references
             )
+
+    @pytest.mark.asyncio
+    async def test_send_email_without_message_id(self):
+        """send_email omits the Message-ID suffix when the handler returns none."""
+        mock_handler = AsyncMock()
+        mock_handler.send_email.return_value = None
+
+        with patch("mcp_email_server.app.dispatch_handler", return_value=mock_handler):
+            result = await send_email(
+                account_name="test_account",
+                recipients=["recipient@example.com"],
+                subject="Test Subject",
+                body="Test Body",
+            )
+
+        assert result == "Email sent successfully to recipient@example.com"
 
     @pytest.mark.asyncio
     async def test_delete_emails(self):
