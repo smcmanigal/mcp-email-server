@@ -250,7 +250,7 @@ uv tool install git+https://github.com/smcmanigal/mcp-email-server.git
 
 After installation, `mcp-email-server` is available as a global command.
 
-> **Note:** An editable install (`-e .`) keeps the *source* live, but the
+> **Note:** An editable install (`-e .`) keeps the _source_ live, but the
 > dependency set is resolved once at install time. After adding/changing
 > dependencies in `pyproject.toml`, refresh the tool's environment with
 > `uv tool upgrade mcp-email-server` (source edits are picked up live;
