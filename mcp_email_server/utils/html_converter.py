@@ -239,3 +239,45 @@ def html_to_text(html_content: str, links: str = "footnotes") -> str:
     text = "".join(ch for ch in text if ch not in _ALSO_INVISIBLE and not _is_invisible(ch))
     lines = [re.sub(r"[ \t\r\f\v]+", " ", line).strip() for line in text.split("\n")]
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip() + extractor.footnotes.render()
+
+
+LONG_URL_LENGTH = 100
+_PLAIN_URL = re.compile(r"(?P<lead>[ \t]?)(?P<open>[\[<(]?)(?P<url>https?://[^\s<>\[\]()\"']+)(?P<close>[\]>)]?)")
+_WRAPPERS = {"[": "]", "<": ">", "(": ")"}
+
+
+def relocate_long_urls(text: str, links: str = "footnotes", min_length: int = LONG_URL_LENGTH) -> str:
+    """Move long URLs out of a plain-text body, matching html_to_text's link modes.
+
+    Marketing mail's text/plain part can be mostly tracking URLs (one Micro Center ad: 152
+    URLs of 566-758 characters, about 95% of the text), which pushes the content past the
+    body length limit. URLs of min_length or more are handled per links:
+    - "footnotes" (default): replaced by "[n]", listed in full in a "Links:" list at the end;
+    - "none": removed;
+    - "inline": left as they are.
+    Shorter URLs are readable and stay in place. A URL wrapped in [], <> or () loses the
+    wrapper along with it.
+    """
+    if links not in LINK_MODES:
+        raise ValueError(f"links must be one of {', '.join(LINK_MODES)}, not {links!r}")
+    if links == "inline" or not text:
+        return text
+    footnotes = _LinkFootnotes()
+
+    def replace(match: re.Match) -> str:
+        url = match.group("url")
+        if len(url) < min_length:
+            return match.group(0)
+        lead = match.group("lead")
+        opener, closer = match.group("open"), match.group("close")
+        wrapped = bool(opener) and _WRAPPERS[opener] == closer
+        outside = "" if wrapped else opener
+        trailing = "" if wrapped else closer
+        if links == "none":
+            return outside + trailing  # drop the space before the URL too
+        return f"{lead}{outside}[{footnotes.number(url)}]{trailing}"
+
+    relocated = _PLAIN_URL.sub(replace, text)
+    if links == "none":
+        relocated = re.sub(r"[ \t]+(\r?\n)", r"\1", relocated)
+    return relocated.rstrip() + footnotes.render()

@@ -35,7 +35,7 @@ from mcp_email_server.emails.models import (
     SaveEmailToFileResponse,
 )
 from mcp_email_server.log import logger
-from mcp_email_server.utils.html_converter import html_to_markdown, html_to_text
+from mcp_email_server.utils.html_converter import html_to_markdown, html_to_text, relocate_long_urls
 
 # Maximum body length before truncation (characters)
 MAX_BODY_LENGTH = 20000
@@ -766,7 +766,9 @@ class EmailClient:
                         html_body += _decode_text_part(html_part, charset)
 
             # Fall back to HTML if no plain text found
-            if not body and html_body:
+            if body:
+                body = relocate_long_urls(body)
+            elif html_body:
                 body = html_to_text(html_body)
         elif _is_attachment_part(email_message):
             # The whole message is one attached file (e.g. a scanned PDF); list it
@@ -780,7 +782,7 @@ class EmailClient:
                 charset = email_message.get_content_charset("utf-8")
                 text = _decode_text_part(payload, charset)
 
-                body = html_to_text(text) if content_type == "text/html" else text
+                body = html_to_text(text) if content_type == "text/html" else relocate_long_urls(text)
         limit = truncate_body if truncate_body is not None else MAX_BODY_LENGTH
         if body and len(body) > limit:
             body = body[:limit] + "...[TRUNCATED]"

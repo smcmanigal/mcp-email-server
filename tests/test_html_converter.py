@@ -204,3 +204,56 @@ class TestHtmlToTextLinks:
         from mcp_email_server.utils.html_converter import html_to_text
 
         assert html_to_text(f'<a href="{href}">Contact us</a>') == "Contact us"
+
+
+class TestRelocateLongUrls:
+    """Long URLs in text/plain bodies follow the same link modes (fork addition)."""
+
+    LONG = "https://track.example.com/c/" + "x" * 120
+    TEXT = f"Unable to see images? Click here» [{LONG}]\r\n\r\nTOP DEALS [{LONG}] | Help https://example.com/help\r\n"
+
+    def test_footnotes_default(self):
+        from mcp_email_server.utils.html_converter import relocate_long_urls
+
+        assert relocate_long_urls(self.TEXT) == (
+            "Unable to see images? Click here» [1]\r\n\r\nTOP DEALS [1] | Help https://example.com/help"
+            f"\n\nLinks:\n[1] {self.LONG}"
+        )
+
+    def test_none_removes_long_urls_only(self):
+        from mcp_email_server.utils.html_converter import relocate_long_urls
+
+        assert relocate_long_urls(self.TEXT, links="none") == (
+            "Unable to see images? Click here»\r\n\r\nTOP DEALS | Help https://example.com/help"
+        )
+
+    def test_inline_unchanged(self):
+        from mcp_email_server.utils.html_converter import relocate_long_urls
+
+        assert relocate_long_urls(self.TEXT, links="inline") == self.TEXT
+
+    def test_unbalanced_wrapper_is_kept(self):
+        from mcp_email_server.utils.html_converter import relocate_long_urls
+
+        assert relocate_long_urls(f"see ({self.LONG}") == f"see ([1]\n\nLinks:\n[1] {self.LONG}"
+
+    def test_no_long_urls_is_unchanged(self):
+        from mcp_email_server.utils.html_converter import relocate_long_urls
+
+        assert relocate_long_urls("Visit https://example.com/help today.") == "Visit https://example.com/help today."
+
+
+def test_plain_text_body_relocates_urls_and_html_fallback_does_not_double_process():
+    from email.message import EmailMessage
+    from unittest.mock import MagicMock
+
+    from mcp_email_server.emails.classic import EmailClient
+
+    long = "https://track.example.com/c/" + "y" * 150
+    msg = EmailMessage()
+    msg["Subject"] = "Deals"
+    msg["From"] = "a@example.com"
+    msg.set_content(f"BIG SALE [{long}]\n")
+    msg.add_alternative(f'<p>BIG SALE <a href="{long}">shop</a></p>', subtype="html")
+    body = EmailClient(MagicMock())._parse_email_data(msg.as_bytes())["body"]
+    assert body == f"BIG SALE [1]\n\nLinks:\n[1] {long}"
