@@ -60,10 +60,10 @@ class TestParseSearchUids:
 
 class TestCallSitesWithIcloudEmptyResult:
     @pytest.mark.asyncio
-    async def test_get_email_count_is_zero(self, email_client):
+    async def test_metadata_page_total_is_zero(self, email_client):
         mock_imap = _mock_imap(("OK", ICLOUD_EMPTY))
         with patch.object(email_client, "imap_class", return_value=mock_imap):
-            assert await email_client.get_email_count() == 0
+            assert await email_client.get_emails_metadata_page() == ([], 0)
 
     @pytest.mark.asyncio
     async def test_metadata_stream_yields_nothing(self, email_client):

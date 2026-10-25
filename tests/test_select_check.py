@@ -44,11 +44,11 @@ class TestSelectOrRaise:
 
 class TestCallSitesSurfaceSelectFailure:
     @pytest.mark.asyncio
-    async def test_get_email_count(self, email_client):
+    async def test_get_emails_metadata_page(self, email_client):
         imap = await _connected_imap(SELECT_NO)
         email_client.imap_class = MagicMock(return_value=imap)
         with pytest.raises(ValueError, match="could not be selected"):
-            await email_client.get_email_count(mailbox="Archve")
+            await email_client.get_emails_metadata_page(mailbox="Archve")
         imap.uid_search.assert_not_called()
         imap.logout.assert_awaited()
 

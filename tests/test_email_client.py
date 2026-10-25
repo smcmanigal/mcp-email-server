@@ -233,8 +233,8 @@ class TestEmailClient:
                 mock_fetch_headers.assert_called_once_with(mock_imap, ["3", "2", "1"])
 
     @pytest.mark.asyncio
-    async def test_get_email_count(self, email_client):
-        """Test getting email count."""
+    async def test_metadata_page_returns_total_from_same_search(self, email_client):
+        """The total comes from the page's own UID SEARCH: one login, one search (port of upstream #135)."""
         # Mock IMAP client
         mock_imap = AsyncMock()
         mock_imap._client_task = asyncio.Future()
@@ -246,11 +246,15 @@ class TestEmailClient:
         mock_imap.uid_search = AsyncMock(return_value=("OK", [b"1 2 3 4 5"]))
         mock_imap.logout = AsyncMock()
 
-        # Mock IMAP class
-        with patch.object(email_client, "imap_class", return_value=mock_imap):
-            count = await email_client.get_email_count()
+        with (
+            patch.object(email_client, "imap_class", return_value=mock_imap),
+            patch.object(email_client, "_batch_fetch_headers", return_value={}) as mock_fetch_headers,
+        ):
+            emails, total = await email_client.get_emails_metadata_page(page=2, page_size=2)
 
-            assert count == 5
+            assert total == 5
+            assert emails == []
+            mock_fetch_headers.assert_awaited_once_with(mock_imap, ["3", "2"])
 
             # Verify IMAP methods were called correctly
             mock_imap.login.assert_called_once_with(

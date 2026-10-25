@@ -912,63 +912,7 @@ class EmailClient:
 
         return results
 
-    async def get_email_count(
-        self,
-        before: datetime | None = None,
-        since: datetime | None = None,
-        subject: str | None = None,
-        from_address: str | None = None,
-        to_address: str | None = None,
-        mailbox: str = "INBOX",
-        seen: bool | None = None,
-        flagged: bool | None = None,
-        answered: bool | None = None,
-    ) -> int:
-        imap = self._imap_connect()
-        try:
-            # Wait for the connection to be established
-            await imap._client_task
-            await imap.wait_hello_from_server()
-
-            # Login and select inbox
-            await _imap_authenticate(
-                imap,
-                self.email_server,
-                self.auth_type,
-                self.email_address,
-                self.oauth2_provider,
-                self.oauth2_client_id,
-                self.oauth2_tenant_id,
-                self.oauth2_client_secret,
-            )
-            await _send_imap_id(imap)
-            await _select_or_raise(imap, mailbox)
-            search_criteria = self._build_search_criteria(
-                before,
-                since,
-                subject,
-                from_address=from_address,
-                to_address=to_address,
-                seen=seen,
-                flagged=flagged,
-                answered=answered,
-            )
-            logger.info(f"Count: Search criteria: {search_criteria}")
-            # Search for messages and count them - use UID SEARCH for consistency
-            # Use charset=None to avoid CHARSET utf-8 which M365 rejects
-            result, messages = await imap.uid_search(*search_criteria, charset=None)
-            if result != "OK":
-                logger.error(f"SEARCH failed: {result} {messages}")
-                return 0
-            return len(_parse_search_uids(messages))
-        finally:
-            # Ensure we logout properly
-            try:
-                await imap.logout()
-            except Exception as e:
-                logger.info(f"Error during logout: {e}")
-
-    async def get_emails_metadata_stream(
+    async def get_emails_metadata_page(
         self,
         page: int = 1,
         page_size: int = 10,
@@ -982,7 +926,12 @@ class EmailClient:
         seen: bool | None = None,
         flagged: bool | None = None,
         answered: bool | None = None,
-    ) -> AsyncGenerator[dict[str, Any], None]:
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Search once and return (metadata for the requested page, total matches).
+
+        The total comes from the same UID SEARCH, so listing needs one connection and
+        one login, and the page and its total cannot disagree.
+        """
         imap = self._imap_connect()
         try:
             # Wait for the connection to be established
@@ -1022,11 +971,11 @@ class EmailClient:
             # Handle errors or empty responses
             if result != "OK":
                 logger.error(f"SEARCH failed: {result} {messages}")
-                return
+                return [], 0
             email_ids = _parse_search_uids(messages)
             if not email_ids:
                 logger.warning("No messages returned from search")
-                return
+                return [], 0
 
             logger.info(f"Found {len(email_ids)} email IDs")
 
@@ -1041,7 +990,7 @@ class EmailClient:
 
             if not page_uids:
                 logger.info(f"Page {page} empty (total {len(email_ids)} UIDs)")
-                return
+                return [], len(email_ids)
 
             # Batch fetch headers for requested page only
             fetch_headers_start = time.perf_counter()
@@ -1053,15 +1002,35 @@ class EmailClient:
                 f"headers in {fetch_headers_elapsed:.2f}s"
             )
 
-            # Yield in sorted order
-            for uid in page_uids:
-                if uid in metadata_by_uid:
-                    yield metadata_by_uid[uid]
+            # Return in sorted order
+            return [metadata_by_uid[uid] for uid in page_uids if uid in metadata_by_uid], len(email_ids)
         finally:
             try:
                 await imap.logout()
             except Exception as e:
                 logger.info(f"Error during logout: {e}")
+
+    async def get_emails_metadata_stream(
+        self,
+        page: int = 1,
+        page_size: int = 10,
+        before: datetime | None = None,
+        since: datetime | None = None,
+        subject: str | None = None,
+        from_address: str | None = None,
+        to_address: str | None = None,
+        order: str = "desc",
+        mailbox: str = "INBOX",
+        seen: bool | None = None,
+        flagged: bool | None = None,
+        answered: bool | None = None,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Yield the metadata of one page; see get_emails_metadata_page."""
+        emails, _total = await self.get_emails_metadata_page(
+            page, page_size, before, since, subject, from_address, to_address, order, mailbox, seen, flagged, answered
+        )
+        for email_data in emails:
+            yield email_data
 
     @staticmethod
     def _find_literal_payload(data: list) -> bytes | None:
@@ -2058,8 +2027,7 @@ class ClassicEmailHandler(EmailHandler):
         flagged: bool | None = None,
         answered: bool | None = None,
     ) -> EmailMetadataPageResponse:
-        emails = []
-        async for email_data in self.incoming_client.get_emails_metadata_stream(
+        email_data, total = await self.incoming_client.get_emails_metadata_page(
             page,
             page_size,
             before,
@@ -2072,19 +2040,8 @@ class ClassicEmailHandler(EmailHandler):
             seen,
             flagged,
             answered,
-        ):
-            emails.append(EmailMetadata.from_email(email_data))
-        total = await self.incoming_client.get_email_count(
-            before,
-            since,
-            subject,
-            from_address=from_address,
-            to_address=to_address,
-            mailbox=mailbox,
-            seen=seen,
-            flagged=flagged,
-            answered=answered,
         )
+        emails = [EmailMetadata.from_email(data) for data in email_data]
         return EmailMetadataPageResponse(
             page=page,
             page_size=page_size,
