@@ -761,6 +761,11 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/83/1d/d6466de3a5249d35e832a52834115ca9d1d0de6abc22065f049707516d47/google_auth-2.48.0-py3-none-any.whl", hash = "sha256:2e2a537873d449434252a9632c28bfc268b0adb1e53f9fb62afc5333a975903f", size = 236499, upload-time = "2026-01-26T19:22:45.099Z" },
 ]
 
+[package.optional-dependencies]
+requests = [
+    { name = "requests" },
+]
+
 [[package]]
 name = "google-auth-oauthlib"
 version = "1.2.4"
@@ -1260,12 +1265,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/f5/f4/e58bc33317c92a0203664daaf00bf6f41166cc0149e5d6870a03f7cd004a/mcp-1.30.0-py3-none-any.whl", hash = "sha256:666edb5009503e1047c9d60346a756f94b261f05cc2625f23d41c728ffc484d0", size = 234581, upload-time = "2026-09-07T14:34:14.266Z" },
 ]
 
-[package.optional-dependencies]
-cli = [
-    { name = "python-dotenv" },
-    { name = "typer" },
-]
-
 [[package]]
 name = "mcp-email-server"
 version = "0.0.2"
@@ -1274,12 +1273,12 @@ dependencies = [
     { name = "aioimaplib" },
     { name = "aiosmtplib" },
     { name = "click" },
-    { name = "google-auth" },
+    { name = "google-auth", extra = ["requests"] },
     { name = "google-auth-oauthlib" },
     { name = "gradio" },
     { name = "jinja2" },
     { name = "loguru" },
-    { name = "mcp", extra = ["cli"] },
+    { name = "mcp" },
     { name = "msal" },
     { name = "pydantic" },
     { name = "pydantic-settings", version = "2.15.0", source = { registry = "https://pypi.org/simple" }, extra = ["toml"], marker = "python_full_version < '3.11'" },
@@ -1310,12 +1309,12 @@ requires-dist = [
     { name = "aioimaplib", specifier = ">=2.0.1" },
     { name = "aiosmtplib", specifier = ">=5.1.2" },
     { name = "click", specifier = ">=8.1.0" },
-    { name = "google-auth", specifier = ">=2.0.0" },
+    { name = "google-auth", extras = ["requests"], specifier = ">=2.0.0" },
     { name = "google-auth-oauthlib", specifier = ">=1.0.0" },
     { name = "gradio", specifier = ">=6.0.1" },
     { name = "jinja2", specifier = ">=3.1.5" },
     { name = "loguru", specifier = ">=0.7.3" },
-    { name = "mcp", extras = ["cli"], specifier = ">=1.30.0,<2" },
+    { name = "mcp", specifier = ">=1.30.0,<2" },
     { name = "msal", specifier = ">=1.25.0" },
     { name = "pydantic", specifier = ">=2.11.0" },
     { name = "pydantic-settings", extras = ["toml"], specifier = ">=2.11.0" },
